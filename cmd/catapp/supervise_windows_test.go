@@ -38,6 +38,29 @@ func integrationWSLTarget() wslclient.Target {
 	}
 }
 
+func TestInstallSmokeStartsAndStopsVerifiedBackend(t *testing.T) {
+	original := localBackendStarter
+	defer func() { localBackendStarter = original }()
+	started := 0
+	stopped := 0
+	localBackendStarter = func(context.Context, appConfig) (localBackend, error) {
+		started++
+		return &fakeBackend{url: "http://127.0.0.1:1234", stop: func(context.Context) error {
+			stopped++
+			return nil
+		}}, nil
+	}
+	if err := runInstallSmoke(appConfig{Mode: "local"}); err != nil {
+		t.Fatal(err)
+	}
+	if started != 1 || stopped != 1 {
+		t.Fatalf("install smoke started/stopped = %d/%d, want 1/1", started, stopped)
+	}
+	if err := runInstallSmoke(appConfig{Mode: "remote"}); err == nil {
+		t.Fatal("remote config must not pass a local install smoke")
+	}
+}
+
 func TestWindowsRetryClassification(t *testing.T) {
 	if !retryableStartup(&wslclient.StartupError{Stage: "bind", Retryable: true, Err: errors.New("busy")}) {
 		t.Fatal("bind conflict must be retryable")

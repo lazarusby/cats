@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -132,13 +133,19 @@ func startLocalBackend(ctx context.Context, cfg appConfig) (localBackend, error)
 		return nil, &windowsTargetRequiredError{Distributions: distributions, LogPath: logPath,
 			Cause: fmt.Errorf("configured distribution %q is not installed", cfg.WSL.Distribution)}
 	}
-	if err := checkWSLHealth(ctx, wslPath, cfg, logFile); err != nil {
+	resolvedTarget, err := resolveWSLPayloadTarget(ctx, wslPath, cfg.WSL, logFile)
+	if err != nil {
+		return nil, &windowsTargetRequiredError{Distributions: distributions, LogPath: logPath, Cause: err}
+	}
+	launchCfg := cfg
+	launchCfg.WSL = resolvedTarget
+	if err := checkWSLHealth(ctx, wslPath, launchCfg, logFile); err != nil {
 		return nil, &windowsTargetRequiredError{Distributions: distributions, LogPath: logPath, Cause: err}
 	}
 
 	var lastErr error
 	for attempt := 1; attempt <= wslStartupTries; attempt++ {
-		backend, err := startWindowsAttempt(ctx, wslPath, cfg, logFile)
+		backend, err := startWindowsAttempt(ctx, wslPath, launchCfg, logFile)
 		if err == nil {
 			backend.log = logFile
 			keepLogOpen = true
@@ -151,6 +158,33 @@ func startLocalBackend(ctx context.Context, cfg appConfig) (localBackend, error)
 		fmt.Fprintf(logFile, "catapp: retryable startup failure on attempt %d/%d: %v\n", attempt, wslStartupTries, err)
 	}
 	return nil, startupError(errorStage(lastErr), cfg, logPath, lastErr)
+}
+
+// resolveWSLPayloadTarget pins a versioned directory once before health and
+// launch. The installer stores the atomic `current` symlink in app.json, while
+// Linux /proc/self/exe correctly reports the resolved sibling directory. Using
+// the same resolved target for both operations makes those identities agree
+// and prevents an upgrade from switching versions between the two operations.
+func resolveWSLPayloadTarget(ctx context.Context, wslPath string, target wslclient.Target, stderr io.Writer) (wslclient.Target, error) {
+	commandCtx, cancel := context.WithTimeout(ctx, wslHealthTimeout)
+	defer cancel()
+	output, err := runBoundedCommand(commandCtx, stderr, wslPath,
+		"--distribution", target.Distribution,
+		"--user", target.User,
+		"--exec", "/usr/bin/readlink", "-f", "--", target.PayloadPath)
+	if err != nil {
+		return wslclient.Target{}, fmt.Errorf("resolve WSL payload current link: %w", err)
+	}
+	resolved := strings.TrimSpace(string(output))
+	if err := wslclient.ValidateLinuxPath("resolved payload path", resolved); err != nil {
+		return wslclient.Target{}, err
+	}
+	result := target
+	result.PayloadPath = resolved
+	if err := result.Validate(); err != nil {
+		return wslclient.Target{}, err
+	}
+	return result, nil
 }
 
 func startupError(stage string, cfg appConfig, logPath string, err error) error {

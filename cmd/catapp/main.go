@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"os"
 	"runtime"
 	"strings"
 )
@@ -47,13 +48,26 @@ var (
 )
 
 func main() {
-	// Native webviews require UI calls on the process's main thread. Run then
-	// blocks there until the window closes.
-	runtime.LockOSThread()
 	log.SetFlags(0)
 	log.SetPrefix("catapp: ")
 
 	cfg := loadAppConfig()
+	if len(os.Args) == 2 && os.Args[1] == "--install-smoke" {
+		if err := runInstallSmoke(cfg); err != nil {
+			log.Printf("install smoke failed: %v", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) != 1 {
+		log.Printf("unexpected command-line arguments")
+		os.Exit(2)
+	}
+
+	// Native webviews require UI calls on the process's main thread. Run then
+	// blocks there until the window closes. The install smoke deliberately runs
+	// before this point because it owns no UI.
+	runtime.LockOSThread()
 	if isRemoteMode(cfg) {
 		runRemote(cfg)
 	} else { // "local" and any unrecognised value

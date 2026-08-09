@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Environment hydration happens inside cats-wsl-host, not the Windows process.
@@ -30,6 +31,43 @@ func initPlatformDescriptor(w desktopWindow, nativeClipboard bool) {
 func runPlatformLocal(cfg appConfig) bool {
 	runWindowsLocal(cfg)
 	return true
+}
+
+// runInstallSmoke exercises the complete version boundary used by the real
+// launcher without opening a window: helper health, daemon startup, Windows
+// HTTP identity verification, and ordered shutdown. Phase 6's installer uses
+// the exit status as its commit/rollback gate after staging both halves.
+func runInstallSmoke(cfg appConfig) error {
+	if isRemoteMode(cfg) {
+		return recordInstallSmokeError(errors.New("install smoke requires local mode"))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
+	defer cancel()
+	backend, err := localBackendStarter(ctx, cfg)
+	if err != nil {
+		return recordInstallSmokeError(err)
+	}
+	if err := backend.Stop(ctx); err != nil {
+		return recordInstallSmokeError(err)
+	}
+	return nil
+}
+
+func recordInstallSmokeError(err error) error {
+	dir, dirErr := appDataDir()
+	if dirErr != nil {
+		return err
+	}
+	logDir := filepath.Join(dir, "logs")
+	if mkdirErr := os.MkdirAll(logDir, 0o700); mkdirErr != nil {
+		return err
+	}
+	file, openErr := os.OpenFile(filepath.Join(logDir, "launcher.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if openErr == nil {
+		_, _ = fmt.Fprintf(file, "catapp: install smoke failed: %v\n", err)
+		_ = file.Close()
+	}
+	return err
 }
 
 type windowsLocalUI struct {

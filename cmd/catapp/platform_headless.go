@@ -14,7 +14,10 @@ func newDesktopWindow(bool) desktopWindow { panic("headless catapp window reques
 func appDataDir() (string, error)         { return "", fmt.Errorf("headless app data dir") }
 func hydratePlatformEnvironment()         {}
 func runPlatformLocal(appConfig) bool     { return false }
-func installMenu(desktopWindow)           {}
+func runInstallSmoke(appConfig) error {
+	return fmt.Errorf("install smoke is unavailable in the headless test adapter")
+}
+func installMenu(desktopWindow) {}
 func initPlatformDescriptor(w desktopWindow, nativeClipboard bool) {
 	w.Init(`window.catsDesktop=Object.freeze({platform:"headless",nativeClipboard:false});`)
 }

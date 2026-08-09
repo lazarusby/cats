@@ -33,8 +33,8 @@ GIT_HASH  := $(shell git rev-parse --short HEAD 2>/dev/null)
 GIT_SUBJ  := $(shell git log -1 --pretty=%s 2>/dev/null | base64 | tr -d '\n')
 STAMP     := -ldflags "-X $(STAMP_PKG).hash=$(GIT_HASH) -X $(STAMP_PKG).subjectB64=$(GIT_SUBJ)"
 
-.PHONY: all vt build test test-catapp-common test-catapp-windows-compile build-ghostty test-ghostty \
-		race-ghostty binaries wsl-payload local dist macapp macapp-client fmt-check vet \
+.PHONY: all vt build test test-catapp-common test-catapp-windows-compile test-windows-installer build-ghostty test-ghostty \
+		race-ghostty binaries wsl-payload wsl-payload-dist windows-launcher windows-dist local dist macapp macapp-client fmt-check vet \
         vet-ghostty check clean
 
 all: binaries
@@ -85,6 +85,23 @@ binaries:
 wsl-payload: binaries
 	$(foreach b,$(WSL_BINS),go build -trimpath $(STAMP) -o bin/$(b) ./cmd/$(b) &&) true
 	@ls -lh $(foreach b,$(BINS) $(WSL_BINS),bin/$(b))
+
+# Release packaging is intentionally separate from `wsl-payload`: ordinary
+# Linux builds do not gain Windows assets or archive side effects.
+wsl-payload-dist: wsl-payload
+	bash scripts/package-wsl-payload.sh
+
+# These targets run on a native Windows builder (GNU make from Git for Windows
+# or MSYS2 is sufficient). The distribution script obtains or accepts the
+# independently built Linux payload; it never cross-compiles the CGO binaries.
+windows-launcher:
+	powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows/Build-WindowsLauncher.ps1
+
+windows-dist:
+	powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows/Build-WindowsDist.ps1
+
+test-windows-installer:
+	powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows/Test-CatsInstaller.ps1
 
 # --- personal install --------------------------------------------------------
 

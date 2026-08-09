@@ -60,3 +60,61 @@ jobs:
         with:
           files: dist/*.tar.gz
           generate_release_notes: true
+
+  # Build the WSL payload natively on the oldest qualified Ubuntu baseline.
+  # The Windows job consumes these exact bytes; it never cross-compiles the
+  # CGO/libghostty executables.
+  wsl-payload:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .tools
+            ~/.cache/zig
+          key: zig-wsl-${{ runner.arch }}-${{ hashFiles('scripts/build-libghostty-vt.sh', 'third_party/libghostty-vt/build.zig.zon') }}
+      - run: make vt
+      - run: make wsl-payload-dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cats-wsl-payload
+          path: dist/cats-wsl-payload_*_linux_amd64.tar.gz
+          if-no-files-found: error
+
+  windows-wsl-dist:
+    needs: wsl-payload
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-toolchain
+      - shell: powershell
+        run: Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\ucrt64\bin'
+      - uses: actions/download-artifact@v4
+        with:
+          name: cats-wsl-payload
+          path: dist
+      - shell: powershell
+        run: .\scripts\windows\Test-CatsInstaller.ps1
+      - shell: powershell
+        run: |
+          $payload = (Get-ChildItem .\dist\cats-wsl-payload_*_linux_amd64.tar.gz -File).FullName
+          .\scripts\windows\Build-WindowsDist.ps1 -PayloadArchive $payload
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/cats_*_windows_wsl_amd64.zip
+          generate_release_notes: true

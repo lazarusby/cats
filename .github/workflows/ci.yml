@@ -29,6 +29,30 @@ jobs:
       - run: make build
       - run: make test
 
+  # Exercise the native cgo/WebView2 launcher and PowerShell 5.1 installer
+  # policy on every change. Full Windows-to-WSL transaction coverage remains
+  # an opt-in host qualification because hosted-runner WSL is not persistent.
+  windows-launcher:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-toolchain
+      - shell: powershell
+        run: Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\ucrt64\bin'
+      - shell: powershell
+        run: .\scripts\windows\Test-CatsInstaller.ps1
+      - shell: powershell
+        run: go test -count=1 .\cmd\catapp .\internal\desktopproto .\internal\wslclient
+      - shell: powershell
+        run: .\scripts\windows\Build-WindowsLauncher.ps1 -OutputPath .\bin\Cats.exe
+
   # The real terminal path: build the vendored VT engine, then vet + race-test
   # everything with -tags ghostty.
   ghostty:
