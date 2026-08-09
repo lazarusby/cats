@@ -8,6 +8,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+
+	"github.com/rohanthewiz/cats/internal/wslclient"
 )
 
 // appConfig is the launcher's own persisted settings — deliberately separate
@@ -18,8 +20,9 @@ import (
 type appConfig struct {
 	// Mode is "local" (supervise the in-bundle daemons) or "remote" (thin client
 	// to a catway URL). An empty value falls back to the build-time defaultMode.
-	Mode   string       `json:"mode"`
-	Remote remoteTarget `json:"remote"`
+	Mode   string           `json:"mode"`
+	WSL    wslclient.Target `json:"wsl"`
+	Remote remoteTarget     `json:"remote"`
 }
 
 // remoteTarget is the catway a thin client connects to: a relay host
@@ -65,8 +68,9 @@ func loadAppConfigFile(path, fallbackMode string) appConfig {
 	return cfg
 }
 
-// saveAppConfig persists cfg to app.json (0600 in a 0700 dir — it can hold a
-// remote URL that is nobody else's business). Parent dirs are created as needed.
+// saveAppConfig persists cfg to app.json. It contains target identity and URLs,
+// never credentials. Parent dirs are private where the platform supports Unix
+// modes; Windows inherits the user's LocalAppData DACL.
 func saveAppConfig(cfg appConfig) error {
 	dir, err := appDataDir()
 	if err != nil {
@@ -84,8 +88,33 @@ func saveAppConfigFile(path string, cfg appConfig) error {
 	if err != nil {
 		return fmt.Errorf("marshal app.json: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
+	tmp, err := os.CreateTemp(dir, ".app-*.json")
+	if err != nil {
+		return fmt.Errorf("create staged app config: %w", err)
 	}
+	tmpPath := tmp.Name()
+	keep := false
+	defer func() {
+		_ = tmp.Close()
+		if !keep {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if err := tmp.Chmod(0o600); err != nil {
+		return fmt.Errorf("protect staged app config: %w", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return fmt.Errorf("write staged app config: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return fmt.Errorf("sync staged app config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close staged app config: %w", err)
+	}
+	if err := replaceAppConfigFile(tmpPath, path); err != nil {
+		return fmt.Errorf("replace %s: %w", path, err)
+	}
+	keep = true
 	return nil
 }

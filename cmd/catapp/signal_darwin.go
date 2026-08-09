@@ -19,3 +19,5 @@ func installSignalHandler() {
 		os.Exit(0)
 	}()
 }
+
+func handleLocalBackendError(appConfig, error) bool { return false }

@@ -65,3 +65,11 @@ func TestResolveUnstampedFallback(t *testing.T) {
 		t.Errorf("fallback hash = %q, want empty or 7 chars", got.Hash)
 	}
 }
+
+func TestVersion(t *testing.T) {
+	got := stamp(t, "abc1234", "")
+	want := "abc1234"
+	if got.Hash != "abc1234" || Version() != want {
+		t.Fatalf("Version = %q for %#v", Version(), got)
+	}
+}

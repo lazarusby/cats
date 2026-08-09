@@ -74,6 +74,9 @@ func runLocal(cfg appConfig) {
 
 	b, err := localBackendStarter(context.Background(), cfg)
 	if err != nil {
+		if handleLocalBackendError(cfg, err) {
+			return
+		}
 		showError("Could not start cats", err.Error())
 		return
 	}

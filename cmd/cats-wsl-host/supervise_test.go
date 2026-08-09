@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -135,6 +136,19 @@ func TestProtocolErrorStopsChildren(t *testing.T) {
 	})
 	if result.err == nil || result.reason != "protocol_error" || result.stage != "protocol" {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestChildLogSignalsClassifiesBindConflict(t *testing.T) {
+	var signals childLogSignals
+	_, _ = signals.Write([]byte("catway: listen tcp 127.0.0.1:42: bind: address al"))
+	_, _ = signals.Write([]byte("ready in use\n"))
+	if !signals.hasBindConflict() {
+		t.Fatal("bind conflict was not classified")
+	}
+	s := session{bindConflict: signals.hasBindConflict}
+	if result := s.catwayStartupFailure(errors.New("exit status 1")); result.stage != "bind" {
+		t.Fatalf("startup stage = %q, want bind", result.stage)
 	}
 }
 

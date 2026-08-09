@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/rohanthewiz/cats/internal/wslclient"
 )
 
 func TestCleanupControllerRunsBackendStopOnce(t *testing.T) {
@@ -36,6 +38,17 @@ func TestCleanupControllerWithoutCallback(t *testing.T) {
 	cleanup.run()
 }
 
+func TestCleanupRegisteredAfterQuitRunsImmediately(t *testing.T) {
+	var cleanup cleanupController
+	cleanup.run()
+	called := 0
+	cleanup.register(func() { called++ })
+	cleanup.register(func() { called++ })
+	if called != 2 {
+		t.Fatalf("late cleanup calls = %d, want 2", called)
+	}
+}
+
 func TestBackendCleanupToleratesStopError(t *testing.T) {
 	called := false
 	cleanup := backendCleanup(&fakeBackend{stop: func(context.Context) error {
@@ -50,12 +63,27 @@ func TestBackendCleanupToleratesStopError(t *testing.T) {
 
 func TestConfigRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", appConfigFile)
-	want := appConfig{Mode: "remote", Remote: remoteTarget{URL: "https://cats.example", Label: "home"}}
+	want := appConfig{
+		Mode: "remote",
+		WSL: wslclient.Target{
+			Distribution: "Ubuntu-24.04",
+			User:         "alice",
+			PayloadPath:  "/home/alice/.local/lib/cats/current",
+		},
+		Remote: remoteTarget{URL: "https://cats.example", Label: "home"},
+	}
 	if err := saveAppConfigFile(path, want); err != nil {
 		t.Fatal(err)
 	}
 	if got := loadAppConfigFile(path, "local"); got != want {
 		t.Fatalf("loadAppConfigFile = %#v, want %#v", got, want)
+	}
+	entries, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != appConfigFile {
+		t.Fatalf("config directory contains staging debris: %v", entries)
 	}
 	if runtime.GOOS != "windows" {
 		if info, err := os.Stat(path); err != nil {
@@ -116,6 +144,15 @@ func TestBuiltInPages(t *testing.T) {
 		if strings.Contains(page, raw) {
 			t.Fatalf("error page contains unescaped input %q", raw)
 		}
+	}
+	setup := wslSetupPageHTML([]string{`Ubuntu"><script>`}, `<repair required>`)
+	for _, raw := range []string{`Ubuntu"><script>`, `<repair required>`} {
+		if strings.Contains(setup, raw) {
+			t.Fatalf("WSL setup page contains unescaped input %q", raw)
+		}
+	}
+	if !strings.Contains(startingPageHTML("Checking WSL"), "Checking WSL") {
+		t.Fatal("starting page omitted its stage")
 	}
 }
 

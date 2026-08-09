@@ -33,7 +33,7 @@ GIT_HASH  := $(shell git rev-parse --short HEAD 2>/dev/null)
 GIT_SUBJ  := $(shell git log -1 --pretty=%s 2>/dev/null | base64 | tr -d '\n')
 STAMP     := -ldflags "-X $(STAMP_PKG).hash=$(GIT_HASH) -X $(STAMP_PKG).subjectB64=$(GIT_SUBJ)"
 
-.PHONY: all vt build test test-catapp-common build-ghostty test-ghostty \
+.PHONY: all vt build test test-catapp-common test-catapp-windows-compile build-ghostty test-ghostty \
 		race-ghostty binaries wsl-payload local dist macapp macapp-client fmt-check vet \
         vet-ghostty check clean
 
@@ -56,6 +56,12 @@ test:
 # mode/config/lifecycle tests also run headlessly on Linux/WSL.
 test-catapp-common:
 	go test -tags catapp_headless ./cmd/catapp
+
+# Compile the Windows configuration/WSL launcher path without requiring cgo or
+# WebView2. Native UI behavior still requires the Windows toolchain/runner.
+test-catapp-windows-compile:
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go test -c -tags catapp_windows_nocgo \
+		$(STAMP) -o /tmp/cats-catapp-windows.test.exe ./cmd/catapp
 
 # --- ghostty-tagged (the real terminal path) ----------------------------------
 
@@ -177,7 +183,7 @@ vet-ghostty:
 	$(GHOSTTY) go vet $(TAGS) ./...
 
 # Everything CI runs, in order.
-check: fmt-check vet build test test-catapp-common vet-ghostty race-ghostty
+check: fmt-check vet build test test-catapp-common test-catapp-windows-compile vet-ghostty race-ghostty
 
 clean:
 	rm -rf bin dist

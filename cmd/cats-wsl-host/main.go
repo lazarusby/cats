@@ -115,6 +115,7 @@ func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "cats-wsl-host: cleanup runtime directory:", err)
 		}
 	}()
+	logSignals := &childLogSignals{}
 
 	control := readControl(stdin)
 	signals := make(chan os.Signal, 1)
@@ -122,14 +123,15 @@ func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	defer signal.Stop(signals)
 
 	s := session{
-		opts:       opts,
-		payloadDir: payloadDir,
-		startDir:   startDir,
-		env:        env,
-		paths:      runtimeDir,
-		stderr:     stderr,
-		control:    control,
-		signals:    signals,
+		opts:         opts,
+		payloadDir:   payloadDir,
+		startDir:     startDir,
+		env:          env,
+		paths:        runtimeDir,
+		stderr:       io.MultiWriter(stderr, logSignals),
+		control:      control,
+		signals:      signals,
+		bindConflict: logSignals.hasBindConflict,
 	}
 	result := s.run(func(addr string) error {
 		return protocol.write(desktopproto.NewReady(appVersion(), addr, os.Getpid()))
@@ -250,15 +252,7 @@ func verifyPayload(dir string) error {
 }
 
 func appVersion() string {
-	info := buildinfo.Get()
-	version := info.Hash
-	if version == "" {
-		version = "dev"
-	}
-	if info.Dirty {
-		version += "-dirty"
-	}
-	return version
+	return buildinfo.Version()
 }
 
 func resolveStartDir(requested, home string) (string, error) {

@@ -45,6 +45,18 @@ func Get() Info {
 	return resolved
 }
 
+// Version is the stable compact identity exchanged by matched desktop-launcher
+// and helper payloads. Dirty is diagnostic metadata, not part of compatibility:
+// otherwise two artifacts stamped from the same source can disagree merely
+// because one build mode records vcs.modified and another does not.
+func Version() string {
+	info := Get()
+	if info.Hash == "" {
+		return "dev"
+	}
+	return info.Hash
+}
+
 func resolve() {
 	resolved.Hash = hash
 	if b, err := base64.StdEncoding.DecodeString(subjectB64); err == nil {

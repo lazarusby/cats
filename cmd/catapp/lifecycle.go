@@ -12,10 +12,18 @@ type cleanupController struct {
 	mu   sync.Mutex
 	once sync.Once
 	fn   func()
+	ran  bool
 }
 
 func (c *cleanupController) register(fn func()) {
 	c.mu.Lock()
+	if c.ran {
+		c.mu.Unlock()
+		if fn != nil {
+			fn()
+		}
+		return
+	}
 	c.fn = fn
 	c.mu.Unlock()
 }
@@ -23,6 +31,7 @@ func (c *cleanupController) register(fn func()) {
 func (c *cleanupController) run() {
 	c.once.Do(func() {
 		c.mu.Lock()
+		c.ran = true
 		fn := c.fn
 		c.mu.Unlock()
 		if fn != nil {

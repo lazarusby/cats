@@ -70,6 +70,7 @@ import (
 	"github.com/rohanthewiz/rweb"
 
 	"github.com/rohanthewiz/cats/internal/app"
+	"github.com/rohanthewiz/cats/internal/backendhealth"
 	"github.com/rohanthewiz/cats/internal/config"
 	"github.com/rohanthewiz/cats/internal/ctlproto"
 	"github.com/rohanthewiz/cats/internal/gwauth"
@@ -309,6 +310,9 @@ func main() {
 	}
 	s.Get("/", func(ctx rweb.Context) error {
 		return ctx.WriteHTML(string(*o.page.Load()))
+	})
+	s.Get(backendhealth.Path, func(ctx rweb.Context) error {
+		return ctx.WriteJSON(backendhealth.Current())
 	})
 	s.WebSocket("/ws", func(ws *rweb.WSConn) error {
 		return o.serve(ws)

@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 )
 
 // This adapter exists only so WSL/Linux CI can execute platform-neutral
@@ -16,7 +17,11 @@ func installMenu(desktopWindow)           {}
 func bindPlatformBridges(desktopWindow) error {
 	return nil
 }
-func installSignalHandler() {}
+func installSignalHandler()                         {}
+func handleLocalBackendError(appConfig, error) bool { return false }
+func replaceAppConfigFile(staged, destination string) error {
+	return os.Rename(staged, destination)
+}
 func startLocalBackend(context.Context, appConfig) (localBackend, error) {
 	return nil, fmt.Errorf("headless local backend")
 }

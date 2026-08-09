@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -22,14 +23,15 @@ const (
 )
 
 type session struct {
-	opts       options
-	payloadDir string
-	startDir   string
-	env        []string
-	paths      runtimePaths
-	stderr     io.Writer
-	control    <-chan controlEvent
-	signals    <-chan os.Signal
+	opts         options
+	payloadDir   string
+	startDir     string
+	env          []string
+	paths        runtimePaths
+	stderr       io.Writer
+	control      <-chan controlEvent
+	signals      <-chan os.Signal
+	bindConflict func() bool
 
 	startupLimit time.Duration
 	catwayGrace  time.Duration
@@ -88,7 +90,7 @@ func (s *session) run(onReady func(string) error) (result sessionResult) {
 	defer ticker.Stop()
 	for {
 		if exited, err := childExited(catway); exited {
-			return sessionResult{reason: "child_exit", stage: "catway", err: childExitError("catway", err)}
+			return s.catwayStartupFailure(err)
 		}
 		if exited, err := childExited(cathost); exited {
 			return sessionResult{reason: "child_exit", stage: "cathost", err: childExitError("cathost", err)}
@@ -96,7 +98,7 @@ func (s *session) run(onReady func(string) error) (result sessionResult) {
 		if tcpReady(s.addr()) {
 			// A listener that vanished in the same sampling window is not ready.
 			if exited, err := childExited(catway); exited {
-				return sessionResult{reason: "child_exit", stage: "catway", err: childExitError("catway", err)}
+				return s.catwayStartupFailure(err)
 			}
 			break
 		}
@@ -105,7 +107,7 @@ func (s *session) run(onReady func(string) error) (result sessionResult) {
 		case <-readyTimer.C:
 			return sessionResult{reason: "startup_error", stage: "catway", err: fmt.Errorf("did not become ready at %s within %s", s.addr(), startupLimit)}
 		case <-catway.done:
-			return sessionResult{reason: "child_exit", stage: "catway", err: childExitError("catway", catway.err())}
+			return s.catwayStartupFailure(catway.err())
 		case <-cathost.done:
 			return sessionResult{reason: "child_exit", stage: "cathost", err: childExitError("cathost", cathost.err())}
 		case event := <-s.control:
@@ -129,6 +131,14 @@ func (s *session) run(onReady func(string) error) (result sessionResult) {
 	case <-cathost.done:
 		return sessionResult{reason: "child_exit", stage: "cathost", err: childExitError("cathost", cathost.err())}
 	}
+}
+
+func (s *session) catwayStartupFailure(err error) sessionResult {
+	stage := "catway"
+	if s.bindConflict != nil && s.bindConflict() {
+		stage = "bind"
+	}
+	return sessionResult{reason: "child_exit", stage: stage, err: childExitError("catway", err)}
 }
 
 func (s *session) addr() string { return fmt.Sprintf("127.0.0.1:%d", s.opts.port) }
@@ -270,4 +280,32 @@ func childExitError(name string, err error) error {
 		return fmt.Errorf("%s exited unexpectedly", name)
 	}
 	return fmt.Errorf("%s exited unexpectedly: %w", name, err)
+}
+
+type childLogSignals struct {
+	mu           sync.Mutex
+	bindConflict bool
+	tail         string
+}
+
+func (s *childLogSignals) Write(data []byte) (int, error) {
+	const marker = "address already in use"
+	s.mu.Lock()
+	text := s.tail + strings.ToLower(string(data))
+	if strings.Contains(text, marker) {
+		s.bindConflict = true
+	}
+	if len(text) >= len(marker)-1 {
+		s.tail = text[len(text)-(len(marker)-1):]
+	} else {
+		s.tail = text
+	}
+	s.mu.Unlock()
+	return len(data), nil
+}
+
+func (s *childLogSignals) hasBindConflict() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bindConflict
 }
