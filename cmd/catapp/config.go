@@ -1,4 +1,4 @@
-//go:build darwin
+//go:build darwin || windows || catapp_headless
 
 package main
 
@@ -33,19 +33,6 @@ type remoteTarget struct {
 // appConfigFile is the launcher settings filename inside appDataDir.
 const appConfigFile = "app.json"
 
-// appDataDir returns the per-user directory for the launcher's own state
-// (app.json): ~/Library/Application Support/cats, the conventional home for a
-// GUI app's support files, kept separate from the daemons' XDG config/state so
-// packaging never disturbs existing sessions. (This launcher is macOS-only —
-// see the darwin build constraint — so no other-platform branch is needed.)
-func appDataDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("locate home dir: %w", err)
-	}
-	return filepath.Join(home, "Library", "Application Support", "cats"), nil
-}
-
 // loadAppConfig reads app.json, falling back to the build-time defaultMode on a
 // first run or any read/parse problem — the launcher must always resolve to a
 // usable mode, never fail to open. A malformed file is logged, not fatal.
@@ -56,7 +43,11 @@ func loadAppConfig() appConfig {
 		log.Printf("app data dir unavailable, using build defaults: %v", err)
 		return cfg
 	}
-	path := filepath.Join(dir, appConfigFile)
+	return loadAppConfigFile(filepath.Join(dir, appConfigFile), defaultMode)
+}
+
+func loadAppConfigFile(path, fallbackMode string) appConfig {
+	cfg := appConfig{Mode: fallbackMode}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if !os.IsNotExist(err) { // a missing file is the normal first-run case
@@ -66,10 +57,10 @@ func loadAppConfig() appConfig {
 	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		log.Printf("%s is malformed, using build defaults: %v", path, err)
-		return appConfig{Mode: defaultMode}
+		return appConfig{Mode: fallbackMode}
 	}
 	if cfg.Mode == "" {
-		cfg.Mode = defaultMode
+		cfg.Mode = fallbackMode
 	}
 	return cfg
 }
@@ -81,6 +72,11 @@ func saveAppConfig(cfg appConfig) error {
 	if err != nil {
 		return err
 	}
+	return saveAppConfigFile(filepath.Join(dir, appConfigFile), cfg)
+}
+
+func saveAppConfigFile(path string, cfg appConfig) error {
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create app data dir %s: %w", dir, err)
 	}
@@ -88,7 +84,6 @@ func saveAppConfig(cfg appConfig) error {
 	if err != nil {
 		return fmt.Errorf("marshal app.json: %w", err)
 	}
-	path := filepath.Join(dir, appConfigFile)
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}

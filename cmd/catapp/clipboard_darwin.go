@@ -3,6 +3,8 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"os/exec"
 	"strings"
 )
@@ -23,4 +25,18 @@ func clipboardWrite(text string) error {
 func clipboardRead() (string, error) {
 	out, err := exec.Command("/usr/bin/pbpaste").Output()
 	return string(out), err
+}
+
+// bindPlatformBridges preserves the existing JavaScript API while keeping its
+// Darwin implementation out of common window flow. Attempt both bindings so a
+// failure in one direction does not hide the other.
+func bindPlatformBridges(w desktopWindow) error {
+	var errs []error
+	if err := w.Bind("catsClipWrite", clipboardWrite); err != nil {
+		errs = append(errs, fmt.Errorf("clipboard write: %w", err))
+	}
+	if err := w.Bind("catsClipRead", clipboardRead); err != nil {
+		errs = append(errs, fmt.Errorf("clipboard read: %w", err))
+	}
+	return errors.Join(errs...)
 }

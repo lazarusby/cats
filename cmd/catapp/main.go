@@ -1,7 +1,7 @@
-//go:build darwin
+//go:build darwin || windows || catapp_headless
 
 // Command catapp is the native desktop launcher for cats: a thin Go
-// supervisor around a WebKit window (github.com/webview/webview_go). It has two
+// supervisor around a native webview window (github.com/webview/webview_go). It has two
 // runtime modes, chosen by the build-time defaultMode and overridable per user
 // in app.json:
 //
@@ -14,23 +14,18 @@
 //     cookie across launches. This is Cats Client.app (make macapp-client).
 //
 // The launcher itself is plain Go (no -tags ghostty) — it only supervises
-// processes and shows a window; the terminal/VT work lives entirely in the
-// bundled catway/cathost binaries. It is macOS-only (WebKit + a native menu
-// via cgo), hence the darwin build constraint on every file in this package.
+// processes and shows a window; the terminal/VT work lives in the platform's
+// local backend. Platform adapters own menus, bridges, signals, configuration
+// paths, and local-backend startup.
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/url"
-	"os"
-	"os/signal"
 	"runtime"
 	"strings"
-	"sync"
-	"syscall"
-
-	webview "github.com/webview/webview_go"
 )
 
 // defaultMode is the build-time default mode: "local" for the self-contained
@@ -46,62 +41,49 @@ const (
 	windowHeight = 820
 )
 
-// cleanup runs the registered teardown exactly once, no matter which path
-// reaches it — window close (deferred), Cmd-Q (the native menu, via the
-// cgo-exported catappCleanup), or a SIGINT/SIGTERM. sync.Once is the single
-// guard so daemons are reaped once and only once.
 var (
-	cleanupOnce sync.Once
-	cleanupFn   func()
+	desktopWindowFactory = newDesktopWindow
+	localBackendStarter  = startLocalBackend
 )
 
-func registerCleanup(fn func()) { cleanupFn = fn }
-
-func runCleanup() {
-	cleanupOnce.Do(func() {
-		if cleanupFn != nil {
-			cleanupFn()
-		}
-	})
-}
-
 func main() {
-	// Cocoa/WebKit require every UI call on the process's main thread; pin the
-	// main goroutine to it before touching the webview. Run() then blocks here
-	// until the window closes.
+	// Native webviews require UI calls on the process's main thread. Run then
+	// blocks there until the window closes.
 	runtime.LockOSThread()
 	log.SetFlags(0)
 	log.SetPrefix("catapp: ")
 
 	cfg := loadAppConfig()
-	switch cfg.Mode {
-	case "remote":
+	if isRemoteMode(cfg) {
 		runRemote(cfg)
-	default: // "local" and any unrecognised value
+	} else { // "local" and any unrecognised value
 		runLocal(cfg)
 	}
 }
 
+func isRemoteMode(cfg appConfig) bool { return cfg.Mode == "remote" }
+
 // runLocal supervises the in-bundle daemons and shows the UI they serve on
 // loopback. The backend is reaped when the window closes (Run returns), on a
 // Cmd-Q, or on a termination signal — all routed through runCleanup.
-func runLocal(_ appConfig) {
-	// Before any child exists: a GUI launch hands us launchd's bare PATH, and
-	// everything downstream (daemons → panes → plugin build steps) inherits it.
-	hydratePATH()
+func runLocal(cfg appConfig) {
+	// Platform environment preparation runs before any child exists. On Darwin
+	// this hydrates Finder's bare PATH; Windows local startup is handled later by
+	// the WSL host and currently leaves the launcher environment unchanged.
+	hydratePlatformEnvironment()
 
-	b, err := startBackend()
+	b, err := localBackendStarter(context.Background(), cfg)
 	if err != nil {
 		showError("Could not start cats", err.Error())
 		return
 	}
-	registerCleanup(b.stop)
+	registerCleanup(backendCleanup(b))
 	defer runCleanup()
 	installSignalHandler()
 
 	w := newWindow(windowTitle)
 	defer w.Destroy()
-	w.Navigate("http://" + b.addr)
+	w.Navigate(b.URL())
 	w.Run()
 }
 
@@ -144,25 +126,16 @@ func runRemote(cfg appConfig) {
 	w.Run()
 }
 
-// newWindow builds the shared webview window (title + size) and installs the
-// native menu bar so Cmd-Q and the standard editing shortcuts work. debug is
-// false: no devtools in the shipped app.
-func newWindow(title string) webview.WebView {
-	w := webview.New(false)
+// newWindow builds the shared webview window, then lets the platform install
+// its menu and native bridges. Debug is false in the shipped app.
+func newWindow(title string) desktopWindow {
+	w := desktopWindowFactory(false)
 	uiWindow = w
-	installMenu() // NSApp now exists (created by webview.New); menu before Run()
+	installMenu(w)
 	w.SetTitle(title)
-	w.SetSize(windowWidth, windowHeight, webview.HintNone)
-	// Native clipboard bridge (clipboard.go): injected into every page the
-	// window loads; the catway UI prefers these over navigator.clipboard,
-	// which WKWebView blocks (empty reads, activation-gated writes). The
-	// window only ever loads the configured catway UI, so exposing the
-	// pasteboard to the page does not leak it to arbitrary content.
-	if err := w.Bind("catsClipWrite", clipboardWrite); err != nil {
-		log.Printf("clipboard write bridge unavailable: %v", err)
-	}
-	if err := w.Bind("catsClipRead", clipboardRead); err != nil {
-		log.Printf("clipboard read bridge unavailable: %v", err)
+	w.SetSize(windowWidth, windowHeight, sizeHintNone)
+	if err := bindPlatformBridges(w); err != nil {
+		log.Printf("native bridge unavailable: %v", err)
 	}
 	return w
 }
@@ -170,7 +143,7 @@ func newWindow(title string) webview.WebView {
 // uiWindow is the single UI window, kept for the View menu's zoom actions.
 // Menu actions fire only while Run() is blocking, so the reference is valid
 // whenever zoomFont is reached.
-var uiWindow webview.WebView
+var uiWindow desktopWindow
 
 // zoomFont steps the terminal font size in the page (+1/-1, 0 = reset) by
 // calling the hook the UI exposes for exactly this path — see catappZoom in
@@ -196,29 +169,16 @@ func remoteTitle(rawURL string) string {
 	return windowTitle
 }
 
-// installSignalHandler reaps the backend and exits on SIGINT/SIGTERM (e.g. a
-// logout or a `kill`), so a signalled quit leaves no orphaned daemons — the
-// deferred cleanup in run* only fires on a normal window-close return.
-func installSignalHandler() {
-	sigc := make(chan os.Signal, 1)
-	signal.Notify(sigc, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigc
-		runCleanup()
-		os.Exit(0)
-	}()
-}
-
 // showError opens a small, self-contained window describing a startup failure.
 // A double-clicked .app has no console, so surfacing the reason in a window is
 // the only way the user sees why nothing opened. Also logged for a dev terminal.
 func showError(title, detail string) {
 	log.Printf("%s: %s", title, detail)
-	w := webview.New(false)
-	installMenu()
+	w := desktopWindowFactory(false)
+	installMenu(w)
 	defer w.Destroy()
 	w.SetTitle("cats — error")
-	w.SetSize(560, 320, webview.HintFixed)
+	w.SetSize(560, 320, sizeHintFixed)
 	w.SetHtml(errorPageHTML(title, detail))
 	w.Run()
 }

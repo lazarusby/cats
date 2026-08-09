@@ -11,7 +11,9 @@ void installAppMenu(const char *appName);
 */
 import "C"
 
-import "unsafe"
+import (
+	"unsafe"
+)
 
 // catappCleanup is called from the Objective-C Quit menu action (menu_darwin.m)
 // before the process terminates, so a Cmd-Q reaps the supervised daemons instead
@@ -41,7 +43,7 @@ func catappZoom(delta C.int) {
 // Edit-menu items to the first responder (the WKWebView) — do not work. Must be
 // called on the main thread, after webview.New (which creates NSApplication) and
 // before Run().
-func installMenu() {
+func installMenu(desktopWindow) {
 	name := C.CString(appMenuName())
 	defer C.free(unsafe.Pointer(name))
 	C.installAppMenu(name)

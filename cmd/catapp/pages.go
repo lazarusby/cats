@@ -1,4 +1,4 @@
-//go:build darwin
+//go:build darwin || windows || catapp_headless
 
 package main
 

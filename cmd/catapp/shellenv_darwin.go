@@ -28,6 +28,8 @@ const (
 	shellEnvTimeout = 5 * time.Second
 )
 
+func hydratePlatformEnvironment() { hydratePATH() }
+
 // hydratePATH replaces our PATH with the user's login-shell PATH when we were
 // launched from the Finder/Dock. It is best-effort: any failure leaves the
 // inherited PATH in place, since a bare PATH still runs the bundled daemons

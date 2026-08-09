@@ -145,7 +145,7 @@ project.
 
 `webview` creates a bundled app with **no menu**, so without intervention ⌘Q
 cannot quit and the standard ⌘C/⌘V/⌘X/⌘A editing shortcuts — which Cocoa routes
-through Edit-menu items to the first responder — do not work. `installMenu()`
+through Edit-menu items to the first responder — do not work. `installMenu(w)`
 (cgo → `menu_darwin.m`) installs one after `webview.New` creates
 `NSApplication` and before `Run()`.
 
@@ -194,7 +194,7 @@ simply skip signalling it.
 
 ## Failure surfacing
 
-A double-clicked `.app` has no console. If `startBackend()` fails, `catapp`
+A double-clicked `.app` has no console. If `startLocalBackend()` fails, `catapp`
 opens a small fixed-size window with the reason (`showError`) — the only way the
 user learns why nothing appeared. It is also logged for a dev terminal.
 

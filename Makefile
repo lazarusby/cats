@@ -30,8 +30,9 @@ GIT_HASH  := $(shell git rev-parse --short HEAD 2>/dev/null)
 GIT_SUBJ  := $(shell git log -1 --pretty=%s 2>/dev/null | base64 | tr -d '\n')
 STAMP     := -ldflags "-X $(STAMP_PKG).hash=$(GIT_HASH) -X $(STAMP_PKG).subjectB64=$(GIT_SUBJ)"
 
-.PHONY: all vt build test build-ghostty test-ghostty race-ghostty binaries \
-        local dist macapp macapp-client fmt-check vet vet-ghostty check clean
+.PHONY: all vt build test test-catapp-common build-ghostty test-ghostty \
+        race-ghostty binaries local dist macapp macapp-client fmt-check vet \
+        vet-ghostty check clean
 
 all: binaries
 
@@ -47,6 +48,11 @@ build:
 
 test:
 	go test ./...
+
+# cmd/catapp normally exists only on Darwin/Windows, but its platform-neutral
+# mode/config/lifecycle tests also run headlessly on Linux/WSL.
+test-catapp-common:
+	go test -tags catapp_headless ./cmd/catapp
 
 # --- ghostty-tagged (the real terminal path) ----------------------------------
 
@@ -161,7 +167,7 @@ vet-ghostty:
 	$(GHOSTTY) go vet $(TAGS) ./...
 
 # Everything CI runs, in order.
-check: fmt-check vet build test vet-ghostty race-ghostty
+check: fmt-check vet build test test-catapp-common vet-ghostty race-ghostty
 
 clean:
 	rm -rf bin dist

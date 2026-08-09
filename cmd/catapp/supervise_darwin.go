@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -24,6 +25,17 @@ type backend struct {
 	addr    string   // 127.0.0.1:<port> the catway serves
 	socket  string   // $TMPDIR unix socket the two daemons share (cathost seam)
 	sockets []string // every $TMPDIR socket we point the daemons at, for cleanup
+}
+
+func startLocalBackend(_ context.Context, _ appConfig) (localBackend, error) {
+	return startBackend()
+}
+
+func (b *backend) URL() string { return "http://" + b.addr }
+
+func (b *backend) Stop(context.Context) error {
+	b.stop()
+	return nil
 }
 
 // startBackend launches cathost then catway, both wired to a private $TMPDIR
