@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/rohanthewiz/cats/internal/shellenv"
 )
 
 // A login shell's PATH arrives wrapped in whatever an interactive rc file
@@ -24,7 +26,7 @@ func TestBetweenMarkers(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := betweenMarkers(tc.in, shellEnvMarker); got != tc.want {
+			if got := shellenv.BetweenMarkers(tc.in, shellEnvMarker); got != tc.want {
 				t.Fatalf("betweenMarkers = %q, want %q", got, tc.want)
 			}
 		})
@@ -33,7 +35,7 @@ func TestBetweenMarkers(t *testing.T) {
 
 // The shell's PATH wins on order, but an inherited-only entry must not be lost.
 func TestMergePATH(t *testing.T) {
-	got := mergePATH("/opt/go/bin:/usr/bin:/bin", "/usr/bin:/bin:/managed/only:")
+	got := shellenv.MergePATH("/opt/go/bin:/usr/bin:/bin", "/usr/bin:/bin:/managed/only:")
 	want := "/opt/go/bin:/usr/bin:/bin:/managed/only"
 	if got != want {
 		t.Fatalf("mergePATH = %q, want %q", got, want)

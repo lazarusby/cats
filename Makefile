@@ -9,10 +9,13 @@ PC_DIR   := $(abspath $(VT_DIR))/zig-out/share/pkgconfig
 GHOSTTY  := PKG_CONFIG_PATH=$(PC_DIR)
 TAGS     := -tags ghostty
 
-# The shipped binaries. The other cmd/ entries are development spikes.
+# The ordinary public Linux binaries. The WSL host helper is packaged only in
+# the Windows/WSL payload so `make binaries` and personal Linux installs retain
+# their existing three-binary shape.
 # cats-todo lives in its own repo (github.com/rohanthewiz/cats-todo) and is
 # installed through the plugin host, so it is no longer built here.
 BINS     := catway cathost catctl
+WSL_BINS := cats-wsl-host
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 GOOS     := $(shell go env GOOS)
 GOARCH   := $(shell go env GOARCH)
@@ -31,7 +34,7 @@ GIT_SUBJ  := $(shell git log -1 --pretty=%s 2>/dev/null | base64 | tr -d '\n')
 STAMP     := -ldflags "-X $(STAMP_PKG).hash=$(GIT_HASH) -X $(STAMP_PKG).subjectB64=$(GIT_SUBJ)"
 
 .PHONY: all vt build test test-catapp-common build-ghostty test-ghostty \
-        race-ghostty binaries local dist macapp macapp-client fmt-check vet \
+		race-ghostty binaries wsl-payload local dist macapp macapp-client fmt-check vet \
         vet-ghostty check clean
 
 all: binaries
@@ -69,6 +72,13 @@ binaries:
 	@mkdir -p bin
 	$(foreach b,$(BINS),$(GHOSTTY) go build $(TAGS) -trimpath $(STAMP) -o bin/$(b) ./cmd/$(b) &&) true
 	@ls -lh bin
+
+# The WSL payload is the ordinary Linux daemon/CLI set plus its private
+# lifecycle owner. The helper has no ghostty/cgo dependency, but receives the
+# exact same build stamp as the siblings whose lifecycle it owns.
+wsl-payload: binaries
+	$(foreach b,$(WSL_BINS),go build -trimpath $(STAMP) -o bin/$(b) ./cmd/$(b) &&) true
+	@ls -lh $(foreach b,$(BINS) $(WSL_BINS),bin/$(b))
 
 # --- personal install --------------------------------------------------------
 
