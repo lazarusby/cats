@@ -71,6 +71,9 @@ func runLocal(cfg appConfig) {
 	// this hydrates Finder's bare PATH; Windows local startup is handled later by
 	// the WSL host and currently leaves the launcher environment unchanged.
 	hydratePlatformEnvironment()
+	if runPlatformLocal(cfg) {
+		return
+	}
 
 	b, err := localBackendStarter(context.Background(), cfg)
 	if err != nil {
@@ -98,11 +101,16 @@ func runRemote(cfg appConfig) {
 	installSignalHandler() // no daemons to reap, but honour a clean quit uniformly
 
 	if cfg.Remote.URL != "" {
-		w := newWindow(remoteTitle(cfg.Remote.URL))
-		defer w.Destroy()
-		w.Navigate(cfg.Remote.URL)
-		w.Run()
-		return
+		if err := validateRemoteURL(cfg.Remote.URL); err == nil {
+			w := newWindow(remoteTitle(cfg.Remote.URL))
+			defer w.Destroy()
+			w.Navigate(strings.TrimSpace(cfg.Remote.URL))
+			w.Run()
+			return
+		} else {
+			log.Printf("saved remote URL is unsafe, returning to connect form: %v", err)
+			cfg.Remote.URL = ""
+		}
 	}
 
 	w := newWindow(windowTitle)
@@ -110,6 +118,13 @@ func runRemote(cfg appConfig) {
 	if err := w.Bind("catsConnect", func(rawURL string) {
 		u := strings.TrimSpace(rawURL)
 		if u == "" {
+			return
+		}
+		if err := validateRemoteURL(u); err != nil {
+			log.Printf("refused remote URL: %v", err)
+			w.Dispatch(func() {
+				w.Eval(fmt.Sprintf("document.getElementById('connect-error').textContent=%q", err.Error()))
+			})
 			return
 		}
 		cfg.Remote.URL = u
@@ -127,6 +142,20 @@ func runRemote(cfg appConfig) {
 	}
 	w.SetHtml(connectPageHTML)
 	w.Run()
+}
+
+func validateRemoteURL(rawURL string) error {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || u == nil || u.Host == "" || u.Hostname() == "" {
+		return fmt.Errorf("URL must include an http or https host")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("URL must use http or https")
+	}
+	if u.User != nil {
+		return fmt.Errorf("URL must not contain user information")
+	}
+	return nil
 }
 
 // newWindow builds the shared webview window, then lets the platform install

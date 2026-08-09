@@ -5,16 +5,31 @@ package main
 import webview "github.com/webview/webview_go"
 
 type nativeWindow struct {
-	w webview.WebView
+	w                 webview.WebView
+	platformClosers   []func()
+	prepareNavigation func(string) error
 }
 
 func newDesktopWindow(debug bool) desktopWindow { return &nativeWindow{w: webview.New(debug)} }
 
-func (w *nativeWindow) Run()                           { w.w.Run() }
-func (w *nativeWindow) Dispatch(fn func())             { w.w.Dispatch(fn) }
-func (w *nativeWindow) Destroy()                       { w.w.Destroy() }
-func (w *nativeWindow) SetTitle(title string)          { w.w.SetTitle(title) }
-func (w *nativeWindow) Navigate(url string)            { w.w.Navigate(url) }
+func (w *nativeWindow) Run()               { w.w.Run() }
+func (w *nativeWindow) Dispatch(fn func()) { w.w.Dispatch(fn) }
+func (w *nativeWindow) Destroy() {
+	for i := len(w.platformClosers) - 1; i >= 0; i-- {
+		w.platformClosers[i]()
+	}
+	w.platformClosers = nil
+	w.w.Destroy()
+}
+func (w *nativeWindow) SetTitle(title string) { w.w.SetTitle(title) }
+func (w *nativeWindow) Navigate(url string) {
+	if w.prepareNavigation != nil {
+		if err := w.prepareNavigation(url); err != nil {
+			return
+		}
+	}
+	w.w.Navigate(url)
+}
 func (w *nativeWindow) SetHtml(page string)            { w.w.SetHtml(page) }
 func (w *nativeWindow) Eval(js string)                 { w.w.Eval(js) }
 func (w *nativeWindow) Bind(name string, fn any) error { return w.w.Bind(name, fn) }

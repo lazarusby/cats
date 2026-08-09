@@ -154,6 +154,12 @@ func TestBuiltInPages(t *testing.T) {
 	if !strings.Contains(startingPageHTML("Checking WSL"), "Checking WSL") {
 		t.Fatal("starting page omitted its stage")
 	}
+	actions := windowsStartupErrorPageHTML("failed", "detail")
+	for _, action := range []string{"catsRetry", "catsRepair", "catsChangeWSL", "catsOpenLogs"} {
+		if !strings.Contains(actions, action) {
+			t.Fatalf("Windows startup error page omitted %s", action)
+		}
+	}
 }
 
 func TestZoomFontDispatchesToPageHook(t *testing.T) {
@@ -183,16 +189,17 @@ func (b *fakeBackend) Stop(ctx context.Context) error {
 }
 
 type fakeWebView struct {
-	bindings  []string
-	bound     map[string]interface{}
-	eval      string
-	title     string
-	url       string
-	html      string
-	ran       bool
-	destroy   bool
-	onRun     func(*fakeWebView)
-	onDestroy func(*fakeWebView)
+	bindings   []string
+	bound      map[string]interface{}
+	eval       string
+	title      string
+	url        string
+	html       string
+	ran        bool
+	destroy    bool
+	onRun      func(*fakeWebView)
+	onDestroy  func(*fakeWebView)
+	onNavigate func(string)
 }
 
 func (w *fakeWebView) Run() {
@@ -210,9 +217,14 @@ func (w *fakeWebView) Destroy() {
 }
 func (w *fakeWebView) SetTitle(title string)    { w.title = title }
 func (*fakeWebView) SetSize(int, int, sizeHint) {}
-func (w *fakeWebView) Navigate(url string)      { w.url = url }
-func (w *fakeWebView) SetHtml(page string)      { w.html = page }
-func (w *fakeWebView) Eval(js string)           { w.eval = js }
+func (w *fakeWebView) Navigate(url string) {
+	w.url = url
+	if w.onNavigate != nil {
+		w.onNavigate(url)
+	}
+}
+func (w *fakeWebView) SetHtml(page string) { w.html = page }
+func (w *fakeWebView) Eval(js string)      { w.eval = js }
 func (w *fakeWebView) Bind(name string, fn interface{}) error {
 	w.bindings = append(w.bindings, name)
 	if w.bound == nil {

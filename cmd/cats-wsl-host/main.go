@@ -47,6 +47,10 @@ type healthReport struct {
 }
 
 func main() {
+	// If the Windows owner disappears, wsl.exe closes both protocol pipes. The
+	// helper must observe EPIPE as an ordinary write error after it has stopped
+	// the children, not die on SIGPIPE before deferred runtime cleanup runs.
+	signal.Ignore(syscall.SIGPIPE)
 	os.Exit(runCLI(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 

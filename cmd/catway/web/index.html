@@ -2465,8 +2465,9 @@
       return;
     }
     // ⌘K (mac) / Ctrl+Alt+K opens the command palette / navigator.
+    const altGraph = !!(e.getModifierState && e.getModifierState("AltGraph"));
     if (e.type === "keydown" && e.code === "KeyK" &&
-        ((e.metaKey && !e.ctrlKey) || (e.ctrlKey && e.altKey))) {
+        ((e.metaKey && !e.ctrlKey) || (e.ctrlKey && e.altKey && !altGraph))) {
       e.preventDefault(); openPalette(); return;
     }
     const isV = e.key === "v" || e.key === "V";

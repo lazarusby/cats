@@ -5,6 +5,7 @@ package inputenc
 import (
 	"os"
 	"regexp"
+	"strings"
 	"testing"
 
 	libghostty "go.mitchellh.com/libghostty"
@@ -81,7 +82,7 @@ func TestGeneratedKeyCodesParse(t *testing.T) {
 			"regenerate with: go run ./cmd/catgen-dart -out cmd/catgen-dart/testdata/golden "+
 			"-flutter-root \"$FLUTTER_ROOT\"", err)
 	}
-	matches := keyTableEntry.FindAllStringSubmatch(string(raw), -1)
+	matches := keyTableEntry.FindAllStringSubmatch(strings.ReplaceAll(string(raw), "\r\n", "\n"), -1)
 	if len(matches) < 200 {
 		t.Fatalf("only %d entries parsed out of %s; the generated shape changed",
 			len(matches), keyTablePath)
@@ -176,7 +177,7 @@ func loadKeyTable(t *testing.T) map[int]string {
 	}
 	row := regexp.MustCompile(`(?m)^\s*0x([0-9A-F]+): '([^']+)',$`)
 	out := map[int]string{}
-	for _, m := range row.FindAllStringSubmatch(string(raw), -1) {
+	for _, m := range row.FindAllStringSubmatch(strings.ReplaceAll(string(raw), "\r\n", "\n"), -1) {
 		var usb int
 		for _, c := range m[1] {
 			usb = usb*16 + hexDigit(c)

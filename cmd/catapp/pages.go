@@ -37,6 +37,7 @@ const connectPageHTML = `<!DOCTYPE html>
   button{margin-top:16px;width:100%;padding:9px;font-size:14px;cursor:pointer;
     background:#2f68c8;color:#fff;border:none;border-radius:5px;font-family:inherit;}
   button:hover{background:#3a78e0;}
+  #connect-error{min-height:16px;color:#ff8a8a;font-size:12px;margin:10px 0 0;}
 </style></head><body>
 <form onsubmit="submitConnect(event)">
   <h1>Connect to cats</h1>
@@ -44,6 +45,7 @@ const connectPageHTML = `<!DOCTYPE html>
   <label for="url">Catway URL</label>
   <input id="url" name="url" type="url" placeholder="https://home.relay.herdr.dev"
     autofocus autocomplete="url"/>
+  <p id="connect-error" role="alert"></p>
   <button type="submit">Connect</button>
 </form>
 <script>
@@ -89,6 +91,19 @@ func startingPageHTML(stage string) string {
 <p class="sub">You can close this window to cancel.</p></div></body></html>`
 }
 
+func windowsStartupErrorPageHTML(title, detail string) string {
+	return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>cats · startup error</title><style>` + builtInPageCSS + actionButtonCSS + `</style></head><body>
+<div class="card"><h1>` + html.EscapeString(title) + `</h1>
+<p class="error">` + html.EscapeString(detail) + `</p><div class="actions">
+<button onclick="window.catsRetry()">Retry</button>
+<button onclick="window.catsRepair()">Repair</button>
+<button onclick="window.catsChangeWSL()">Change distribution</button>
+<button onclick="window.catsOpenLogs()">Open logs</button>
+</div></div></body></html>`
+}
+
 func wslSetupPageHTML(distributions []string, detail string) string {
 	var options strings.Builder
 	for _, distribution := range distributions {
@@ -101,7 +116,7 @@ func wslSetupPageHTML(distributions []string, detail string) string {
 label{display:block;margin-top:12px;color:#aaa;font-size:12px}input,select{width:100%;
 box-sizing:border-box;padding:8px;margin-top:4px;background:#141414;color:#eee;
 border:1px solid #444;border-radius:4px}button{margin-top:16px;padding:9px 16px;
-background:#2f68c8;color:#fff;border:0;border-radius:5px}</style></head><body>
+background:#2f68c8;color:#fff;border:0;border-radius:5px}` + actionButtonCSS + `</style></head><body>
 <form class="card" onsubmit="event.preventDefault();window.catsSelectWSL(
 document.getElementById('distribution').value,document.getElementById('user').value,
 document.getElementById('payload').value)"><h1>Connect cats to WSL2</h1>
@@ -110,9 +125,15 @@ document.getElementById('payload').value)"><h1>Connect cats to WSL2</h1>
 <label>Linux user<input id="user" required autocomplete="username"/></label>
 <label>Payload directory<input id="payload" required value="/home/USER/.local/lib/cats/current"/></label>
 <button type="submit">Verify and start</button>
+<div class="actions"><button type="button" onclick="window.catsRepair()">Repair</button>
+<button type="button" onclick="window.catsOpenLogs()">Open logs</button></div>
 <p class="sub">CATS will not install or modify a distribution automatically. Run the installer to repair a missing payload.</p>
 </form></body></html>`
 }
+
+const actionButtonCSS = `.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.actions button{margin:0;padding:8px 11px;background:#2f68c8;color:#fff;border:0;
+border-radius:5px;cursor:pointer}.actions button:hover{background:#3a78e0}`
 
 const builtInPageCSS = `html,body{margin:0;height:100%;background:#181818;color:#d4d4d4;
 font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;display:flex;

@@ -11,6 +11,11 @@ require (
 	go.mitchellh.com/libghostty v0.0.0-20260528200934-790a3ff6e9f6
 )
 
+// Keep the pinned upstream wrapper while exposing its existing WebView2
+// controller to a narrow Windows navigation/accelerator hook. Upstream's Go
+// API still does not surface these callbacks.
+replace github.com/webview/webview_go => ./third_party/webview_go
+
 require (
 	github.com/rohanthewiz/element v0.5.6 // indirect
 	github.com/rohanthewiz/serr v1.3.0 // indirect

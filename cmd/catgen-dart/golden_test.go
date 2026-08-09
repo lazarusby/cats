@@ -12,8 +12,9 @@ import (
 	"github.com/rohanthewiz/cats/internal/browserproto"
 )
 
-// goldenDir holds the exact bytes cats-mobile's packages/catsproto ships. The
-// files are committed here rather than only in the app repo so the drift gate
+// goldenDir holds the generated content cats-mobile's packages/catsproto ships.
+// CRLF and LF are equivalent so the same checkout passes on native Windows.
+// The files are committed here rather than only in the app repo so the drift gate
 // bites in the repo where the drift HAPPENS: a field added to PaneFrame is a
 // cats commit, and this test makes that commit fail its own `make check` rather
 // than quietly leaving the phone a version behind until somebody notices a
@@ -54,8 +55,10 @@ func TestGoldenIsUpToDate(t *testing.T) {
 			continue
 		}
 		delete(onDisk, name)
-		if string(got) != want {
-			t.Errorf("%s is stale.\n%s\n%s", name, firstDifference(string(got), want), regenHint)
+		gotText := normalizeGoldenEOL(string(got))
+		wantText := normalizeGoldenEOL(want)
+		if gotText != wantText {
+			t.Errorf("%s is stale.\n%s\n%s", name, firstDifference(gotText, wantText), regenHint)
 		}
 	}
 	for name := range onDisk {
@@ -64,6 +67,10 @@ func TestGoldenIsUpToDate(t *testing.T) {
 		}
 		t.Errorf("%s is in the golden but the generator no longer emits it", name)
 	}
+}
+
+func normalizeGoldenEOL(value string) string {
+	return strings.ReplaceAll(value, "\r\n", "\n")
 }
 
 // TestGeneratorIsDeterministic runs the whole pipeline twice. Map iteration is

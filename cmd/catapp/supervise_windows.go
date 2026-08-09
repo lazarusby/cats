@@ -35,13 +35,14 @@ const (
 )
 
 type windowsBackend struct {
-	url   string
-	cmd   *exec.Cmd
-	stdin io.WriteCloser
-	done  <-chan error
-	log   io.WriteCloser
-	once  sync.Once
-	err   error
+	url      string
+	launchID string
+	cmd      *exec.Cmd
+	stdin    io.WriteCloser
+	done     <-chan error
+	log      io.WriteCloser
+	once     sync.Once
+	err      error
 }
 
 func (b *windowsBackend) URL() string { return b.url }
@@ -245,7 +246,7 @@ func startWindowsAttempt(ctx context.Context, wslPath string, cfg appConfig, std
 		cleanup()
 		return nil, err
 	}
-	return &windowsBackend{url: baseURL, cmd: command, stdin: stdin, done: done}, nil
+	return &windowsBackend{url: baseURL, launchID: launchID, cmd: command, stdin: stdin, done: done}, nil
 }
 
 func runBoundedCommand(ctx context.Context, stderr io.Writer, name string, args ...string) ([]byte, error) {

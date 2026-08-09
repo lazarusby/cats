@@ -13,6 +13,7 @@ import (
 func newDesktopWindow(bool) desktopWindow { panic("headless catapp window requested") }
 func appDataDir() (string, error)         { return "", fmt.Errorf("headless app data dir") }
 func hydratePlatformEnvironment()         {}
+func runPlatformLocal(appConfig) bool     { return false }
 func installMenu(desktopWindow)           {}
 func bindPlatformBridges(desktopWindow) error {
 	return nil
