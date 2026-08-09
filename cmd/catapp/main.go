@@ -166,8 +166,10 @@ func newWindow(title string) desktopWindow {
 	installMenu(w)
 	w.SetTitle(title)
 	w.SetSize(windowWidth, windowHeight, sizeHintNone)
-	if err := bindPlatformBridges(w); err != nil {
-		log.Printf("native bridge unavailable: %v", err)
+	bridgeErr := bindPlatformBridges(w)
+	initPlatformDescriptor(w, bridgeErr == nil)
+	if bridgeErr != nil {
+		log.Printf("native bridge unavailable: %v", bridgeErr)
 	}
 	return w
 }
@@ -211,6 +213,7 @@ func showError(title, detail string) {
 	defer w.Destroy()
 	w.SetTitle("cats — error")
 	w.SetSize(560, 320, sizeHintFixed)
+	initPlatformDescriptor(w, false)
 	w.SetHtml(errorPageHTML(title, detail))
 	w.Run()
 }

@@ -57,6 +57,10 @@ func bindPlatformBridges(window desktopWindow) error {
 			}
 			runWindowsMenuCommand(native, command)
 			return true
+		},
+		func(uri string, kind webview.WindowsPermissionKind, _ bool) bool {
+			return kind == webview.WindowsPermissionNotifications &&
+				policy.allowsTrustedOrigin(uri)
 		})
 	if err != nil {
 		return err

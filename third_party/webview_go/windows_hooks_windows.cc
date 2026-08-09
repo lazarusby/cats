@@ -141,15 +141,48 @@ public:
   }
 };
 
+class PermissionHandler final
+    : public EventHandler<ICoreWebView2PermissionRequestedEventHandler,
+                          &IID_ICoreWebView2PermissionRequestedEventHandler> {
+public:
+  using EventHandler::EventHandler;
+
+  HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2 *,
+                                   ICoreWebView2PermissionRequestedEventArgs *args) override {
+    if (!args) {
+      return E_POINTER;
+    }
+    LPWSTR uri = nullptr;
+    COREWEBVIEW2_PERMISSION_KIND kind{};
+    BOOL user_initiated = FALSE;
+    if (FAILED(args->get_Uri(&uri)) ||
+        FAILED(args->get_PermissionKind(&kind)) ||
+        FAILED(args->get_IsUserInitiated(&user_initiated))) {
+      CoTaskMemFree(uri);
+      args->put_State(COREWEBVIEW2_PERMISSION_STATE_DENY);
+      return S_OK;
+    }
+    const int allowed = goWebviewWindowsPermission(
+        go_handle_, reinterpret_cast<uint16_t *>(uri),
+        static_cast<uint32_t>(kind), user_initiated ? 1 : 0);
+    CoTaskMemFree(uri);
+    args->put_State(allowed ? COREWEBVIEW2_PERMISSION_STATE_ALLOW
+                            : COREWEBVIEW2_PERMISSION_STATE_DENY);
+    return S_OK;
+  }
+};
+
 struct WindowsHooks {
   ICoreWebView2 *webview{};
   ICoreWebView2Controller *controller{};
   EventRegistrationToken navigation_token{};
   EventRegistrationToken new_window_token{};
   EventRegistrationToken accelerator_token{};
+  EventRegistrationToken permission_token{};
   bool navigation_registered{};
   bool new_window_registered{};
   bool accelerator_registered{};
+  bool permission_registered{};
 };
 
 void remove_hooks(WindowsHooks *hooks) {
@@ -161,6 +194,8 @@ void remove_hooks(WindowsHooks *hooks) {
     hooks->webview->remove_NewWindowRequested(hooks->new_window_token);
   if (hooks->controller && hooks->accelerator_registered)
     hooks->controller->remove_AcceleratorKeyPressed(hooks->accelerator_token);
+  if (hooks->webview && hooks->permission_registered)
+    hooks->webview->remove_PermissionRequested(hooks->permission_token);
   if (hooks->webview)
     hooks->webview->Release();
   if (hooks->controller)
@@ -202,13 +237,16 @@ extern "C" void *webview_install_windows_hooks(webview_t instance,
   auto *navigation = new (std::nothrow) NavigationHandler(go_handle);
   auto *new_window = new (std::nothrow) NewWindowHandler(go_handle);
   auto *accelerator = new (std::nothrow) AcceleratorHandler(go_handle);
-  if (!navigation || !new_window || !accelerator) {
+  auto *permission = new (std::nothrow) PermissionHandler(go_handle);
+  if (!navigation || !new_window || !accelerator || !permission) {
     if (navigation)
       navigation->Release();
     if (new_window)
       new_window->Release();
     if (accelerator)
       accelerator->Release();
+    if (permission)
+      permission->Release();
     if (error_code)
       *error_code = E_OUTOFMEMORY;
     remove_hooks(hooks);
@@ -221,6 +259,7 @@ extern "C" void *webview_install_windows_hooks(webview_t instance,
   if (FAILED(result)) {
     new_window->Release();
     accelerator->Release();
+    permission->Release();
     if (error_code)
       *error_code = result;
     remove_hooks(hooks);
@@ -233,12 +272,25 @@ extern "C" void *webview_install_windows_hooks(webview_t instance,
   new_window->Release();
   if (FAILED(result)) {
     accelerator->Release();
+    permission->Release();
     if (error_code)
       *error_code = result;
     remove_hooks(hooks);
     return nullptr;
   }
   hooks->new_window_registered = true;
+
+  result = hooks->webview->add_PermissionRequested(permission,
+                                                   &hooks->permission_token);
+  permission->Release();
+  if (FAILED(result)) {
+    accelerator->Release();
+    if (error_code)
+      *error_code = result;
+    remove_hooks(hooks);
+    return nullptr;
+  }
+  hooks->permission_registered = true;
 
   result = controller->add_AcceleratorKeyPressed(accelerator,
                                                   &hooks->accelerator_token);

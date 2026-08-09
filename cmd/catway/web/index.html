@@ -631,7 +631,7 @@
     <div id="topbar">
       <div id="tabbar"></div>
       <div id="statusbar">
-        <span class="tbtn" id="palhint" title="command palette (⌘K / Ctrl+Alt+K)"><span class="tmk">⌘K</span>palette</span>
+        <span class="tbtn" id="palhint"><span class="tmk"></span>palette</span>
         <span class="tbtn" id="pluginsbtn" title="plugins — install, run, update"><span class="tmk">⧉</span>plugins</span>
         <span class="tbtn" id="chatbtn" title="chat — AI agent side panel"><span class="tmk">✦</span>chat</span>
         <span class="tbtn" id="gear" title="menu"><span class="g">⚙</span></span>
@@ -687,6 +687,14 @@
   const chatBtnEl = document.getElementById("chatbtn");
   const chatStopEl = document.getElementById("chat-stop");
   const chatClearEl = document.getElementById("chat-clear");
+  // The native shell publishes catsDesktop before any page code. Ordinary
+  // browsers have no descriptor; CatsPlatform uses their OS hint for labels
+  // and shortcut ergonomics without mistaking them for the privileged shell.
+  const DESKTOP = CatsPlatform.describe(window.catsDesktop,
+    (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform);
+  const SHORTCUTS = CatsPlatform.shortcuts(DESKTOP);
+  palHintEl.querySelector(".tmk").textContent = SHORTCUTS.palette;
+  palHintEl.title = "command palette (" + SHORTCUTS.paletteKeys.join(" / ") + ")";
   const dpr = window.devicePixelRatio || 1;
   const measureCtx = document.createElement("canvas").getContext("2d");
 
@@ -2447,6 +2455,11 @@
     return (e.shiftKey ? 1 : 0) | (e.altKey ? 2 : 0) | (e.ctrlKey ? 4 : 0) | (e.metaKey ? 8 : 0);
   }
 
+  let composing = false;
+  const compositionCodes = new Set();
+  window.addEventListener("compositionstart", () => { composing = true; });
+  window.addEventListener("compositionend", () => { composing = false; });
+
   function onKey(e) {
     // The chat panel owns the keyboard while focus is inside it: composed
     // text must never reach a PTY, and terminal shortcuts (⌘V paste-to-pane,
@@ -2464,35 +2477,26 @@
       if (e.type === "keydown") copyModeKey(copyModePane, e);
       return;
     }
-    // ⌘K (mac) / Ctrl+Alt+K opens the command palette / navigator.
-    const altGraph = !!(e.getModifierState && e.getModifierState("AltGraph"));
-    if (e.type === "keydown" && e.code === "KeyK" &&
-        ((e.metaKey && !e.ctrlKey) || (e.ctrlKey && e.altKey && !altGraph))) {
-      e.preventDefault(); openPalette(); return;
+    // Some engines clear isComposing before the matching keyup. Remember the
+    // code suppressed during composition so that final control event cannot
+    // become an orphan terminal keyup after compositionend.
+    if (e.type === "keyup" && compositionCodes.delete(e.code)) return;
+    const action = CatsPlatform.keyboardAction(e, DESKTOP, composing);
+    if (action === "ignore") {
+      if (e.type === "keydown" && e.code) compositionCodes.add(e.code);
+      return;
     }
-    const isV = e.key === "v" || e.key === "V";
-    if (e.type === "keydown" && e.metaKey && !e.ctrlKey && isV) { e.preventDefault(); pasteText(); return; }
-    // ⌘+ / ⌘- / ⌘0 size the terminal type instead of zooming the browser (page
-    // zoom would blur the canvas and leave the grid math on the old cell size).
-    // Matched on e.code so ⌘= and ⌘⇧+ are the same key, numpad included.
-    if (e.type === "keydown" && e.metaKey && !e.ctrlKey) {
-      switch (e.code) {
-        case "Equal": case "NumpadAdd":
-          e.preventDefault(); setFontSize(FONT_PX + 1); return;
-        case "Minus": case "NumpadSubtract":
-          e.preventDefault(); setFontSize(FONT_PX - 1); return;
-        case "Digit0": case "Numpad0":
-          e.preventDefault(); setFontSize(FONT_DEFAULT); return;
-      }
-    }
-    // ⌘C and ⌘Z/⌘⇧Z fall through to the pane below: apps speaking the kitty
-    // keyboard protocol (editors like rd) receive super+c / super+z and run
-    // their own copy/undo; for legacy panes the server's encoder emits
-    // nothing, same as Ghostty. cats' own copy paths (drag, copy-mode)
-    // already copied by the time ⌘C could be pressed, so nothing here
-    // competes with them.
-    if (e.metaKey && !e.ctrlKey && e.code !== "KeyC" && e.code !== "KeyZ") return;  // leave other Cmd shortcuts to the browser
-    if (e.code === "F12") return;         // devtools
+    if (action === "browser") return;
+    if (action !== "terminal") e.preventDefault();
+    if (action === "palette") { openPalette(); return; }
+    if (action === "paste") { pasteText(); return; }
+    if (action === "font-increase") { setFontSize(FONT_PX + 1); return; }
+    if (action === "font-decrease") { setFontSize(FONT_PX - 1); return; }
+    if (action === "font-reset") { setFontSize(FONT_DEFAULT); return; }
+
+    // All remaining events belong to the pane. They stay structured so the
+    // server remains authoritative for Control/Alt, AltGr, kitty keyboard and
+    // modifyOtherKeys encoding. Composition events never reach this branch.
     e.preventDefault();
     // Typing to the terminal dismisses a lingering (stale) copy wash.
     if (e.type === "keydown") clearStaleSelections();
@@ -2503,20 +2507,22 @@
   window.addEventListener("keyup", onKey);
 
   // ---- Clipboard ----
-  // The mac app binds catsClipWrite/catsClipRead (native pasteboard) into the
-  // page, because WKWebView cripples navigator.clipboard: reads resolve empty
-  // and writes demand a user activation that WebSocket-driven copies (OSC 52
-  // from a pane, §7 read results) never have. Prefer the bridge when present;
-  // browsers keep using navigator.clipboard.
+  // Native desktop apps bind catsClipWrite/catsClipRead because embedded
+  // browser clipboard APIs are restricted. Prefer the bridge whenever it is
+  // present; an ordinary browser has no descriptor or bindings and stays on
+  // navigator.clipboard. A bridge rejection remains a rejection rather than
+  // silently retrying through a second permission surface.
   function clipWrite(text) {
-    if (window.catsClipWrite) return window.catsClipWrite(text);
-    return navigator.clipboard.writeText(text);
+    return CatsPlatform.clipboardWrite(text, {
+      nativeWrite: window.catsClipWrite,
+      browserClipboard: navigator.clipboard,
+    });
   }
   function clipRead() {
-    if (window.catsClipRead) return window.catsClipRead();
-    if (!navigator.clipboard || !navigator.clipboard.readText)
-      return Promise.reject(new Error("clipboard read unavailable"));
-    return navigator.clipboard.readText();
+    return CatsPlatform.clipboardRead({
+      nativeRead: window.catsClipRead,
+      browserClipboard: navigator.clipboard,
+    });
   }
 
   // ---- Paste ----
@@ -2525,6 +2531,9 @@
       .then((t) => { if (t) sendMsg({ t: "paste", data: t }); else toast("clipboard has no text"); })
       .catch((err) => toast("paste blocked: " + ((err && err.name) || err)));
   }
+  // Native Edit menus call this narrow hook; it performs exactly the same
+  // clipboard-read/paste-message path as the page's button and shortcut.
+  window.pasteText = pasteText;
   document.addEventListener("paste", (e) => {
     if (chatEl.contains(e.target)) return; // a paste into the composer stays local
     const text = (e.clipboardData || window.clipboardData).getData("text");
@@ -2819,7 +2828,11 @@
           p.sel = null;                  // a click → follow a hyperlink under it
           scheduleDraw(p);
           const c = p.cells[sel.anchor.y * p.W + sel.anchor.x];
-          if (c && c.h && p.links[c.h - 1]) window.open(p.links[c.h - 1], "_blank", "noopener");
+          if (c && c.h && p.links[c.h - 1]) {
+            const target = CatsPlatform.safeExternalURL(p.links[c.h - 1], location.href);
+            if (target) window.open(target, "_blank", "noopener");
+            else toast("link blocked: only http(s) URLs are allowed");
+          }
         }
         continue;
       }
@@ -3896,11 +3909,11 @@
 
       const left = document.createElement("div");
       left.appendChild(helpSection("global", [
-        ["command palette", ["⌘K", "Ctrl+Alt+K"]],
-        ["paste", ["⌘V", "Ctrl+Shift+V*"]],
-        ["bigger / smaller font", ["⌘+", "⌘-"]],
-        ["reset font size", ["⌘0"]],
-        ["this help", ["⌘K → keyboard shortcuts"]],
+        ["command palette", SHORTCUTS.paletteKeys],
+        ["paste", [SHORTCUTS.paste]],
+        ["bigger / smaller font", [SHORTCUTS.fontIncrease, SHORTCUTS.fontDecrease]],
+        ["reset font size", [SHORTCUTS.fontReset]],
+        ["this help", [SHORTCUTS.help]],
       ]));
       left.appendChild(helpSection("start-path picker (new workspace)", [
         ["move through directories", ["↑", "↓", "Ctrl+n", "Ctrl+p"]],
@@ -3947,7 +3960,9 @@
       body.appendChild(cols);
       const note = document.createElement("p");
       note.className = "hint";
-      note.textContent = "* browser paste shortcuts vary; the ⌘V path asks for clipboard permission once. Everything else is typed straight into the focused terminal.";
+      note.textContent = DESKTOP.desktop
+        ? "Native edit and font shortcuts are handled by the desktop menu. Ordinary terminal Control chords are sent to the focused pane."
+        : "Browser paste shortcuts and clipboard permission vary. Everything not listed above is sent to the focused terminal.";
       body.appendChild(note);
       m.appendChild(body);
       const btns = document.createElement("div"); btns.className = "btns";
@@ -3957,6 +3972,8 @@
       ov.appendChild(m);
     });
   }
+  // Native Help/F1 menu commands use the same modal as the page.
+  window.openHelp = openHelp;
 
   // ---- Settings modal (WS8): theme + copy-mode keys over config.get/set ----
   //
@@ -4252,23 +4269,31 @@
   // user granted permission) whose click reveals the pane — agent.focus crosses
   // workspaces and tabs.
   function handleNotify(msg) {
-    // Non-agent kinds (e.g. an update notice) always toast — there is no pane
-    // whose visibility could make them redundant.
-    if (msg.kind !== "attention" && msg.kind !== "finished") {
-      toast(msg.message + (msg.body ? " — " + msg.body : ""));
-      return;
-    }
     const visible = msg.pane ? panes.has(msg.pane) : false;
     const focused = document.hasFocus();
-    if (focused && visible) return;
-    toast(msg.message + (msg.body ? " — " + msg.body : ""));
-    if (focused || !("Notification" in window) || Notification.permission !== "granted") return;
-    const n = new Notification(msg.message, { body: msg.body || "", tag: "cats-pane-" + (msg.pane || 0) });
-    n.onclick = () => {
-      window.focus();
-      if (msg.pane) sendCmd("agent.focus", { pane: msg.pane });
-      n.close();
-    };
+    const supported = "Notification" in window;
+    const plan = CatsPlatform.notificationPlan({
+      kind: msg.kind, visible, focused, supported,
+      permission: supported ? Notification.permission : "unsupported",
+    });
+    if (plan.suppress) return;
+    const bounded = CatsPlatform.boundedNotification(msg);
+    if (plan.toast) toast(bounded.title + (bounded.body ? " — " + bounded.body : ""));
+    if (!plan.native) return;
+    try {
+      const n = new Notification(bounded.title, {
+        body: bounded.body,
+        tag: "cats-pane-" + bounded.pane,
+      });
+      n.onclick = () => {
+        window.focus();
+        if (bounded.pane) sendCmd("agent.focus", { pane: bounded.pane });
+        n.close();
+      };
+    } catch (err) {
+      // The toast already delivered the event; a platform notification failure
+      // must not duplicate it or break subsequent WebSocket messages.
+    }
   }
 
   // The Notification API only grants permission from a user gesture, so ask
@@ -4278,17 +4303,20 @@
     const req = () => {
       window.removeEventListener("pointerdown", req);
       window.removeEventListener("keydown", req);
-      Notification.requestPermission();
+      try { Promise.resolve(Notification.requestPermission()).catch(() => {}); } catch (err) {}
     };
     window.addEventListener("pointerdown", req);
     window.addEventListener("keydown", req);
   })();
 
   // ---- Session ----
+  let reconnectAttempt = 0, reconnectTimer = null;
   function connect() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     ws = new WebSocket(`${proto}://${location.host}/ws`);
     ws.onopen = () => {
+      reconnectAttempt = 0;
+      clearTimeout(reconnectTimer); reconnectTimer = null;
       // A pane.list still in flight when the socket died never gets its callback,
       // which would leave the single-flight guard latched and freeze the Panes
       // section for the rest of the session. The reconnect's layout re-queries.
@@ -4301,7 +4329,12 @@
       if (!winFocused) sendMsg({ t: "focus", focused: false });
     };
     ws.onmessage = (ev) => onMessage(JSON.parse(ev.data));
-    ws.onclose = () => { setStatus("disconnected — retrying…", true); setTimeout(connect, 1500); };
+    ws.onclose = () => {
+      setStatus("disconnected — retrying…", true);
+      clearTimeout(reconnectTimer);
+      const delay = CatsPlatform.reconnectDelay(reconnectAttempt++);
+      reconnectTimer = setTimeout(connect, delay);
+    };
     ws.onerror = () => ws.close();
   }
 

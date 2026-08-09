@@ -65,6 +65,17 @@ func (p *windowsNavigationPolicy) decide(rawURL string, newWindow bool) navigati
 	return navigationExternal
 }
 
+func (p *windowsNavigationPolicy) allowsTrustedOrigin(rawURL string) bool {
+	origin, err := webOrigin(rawURL)
+	if err != nil {
+		return false
+	}
+	p.mu.RLock()
+	trusted := p.trusted
+	p.mu.RUnlock()
+	return trusted != "" && origin == trusted
+}
+
 func webOrigin(rawURL string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil || u == nil {

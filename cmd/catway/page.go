@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
 	"log"
 	"os"
@@ -11,6 +12,9 @@ import (
 	"github.com/rohanthewiz/cats/internal/config"
 	"github.com/rohanthewiz/cats/internal/theme"
 )
+
+//go:embed web/platform.js
+var platformJS string
 
 // renderPage bakes the front-end's server-side settings into the served HTML: a
 // <style> that overrides the :root CSS custom properties (theme colours + font),
@@ -28,13 +32,20 @@ import (
 // keybindings and build info ride through json.Marshal, whose default HTML
 // escaping keeps a "</script>" in a value inert.
 func renderPage(base []byte, cfg config.Config) []byte {
-	inject := themeStyle(resolveTheme(cfg)) + keybindingsScript(cfg.Keybindings) + buildScript() + homeScript()
+	inject := platformScript() + themeStyle(resolveTheme(cfg)) + keybindingsScript(cfg.Keybindings) + buildScript() + homeScript()
 	html := string(base)
 	if i := strings.LastIndex(html, "</head>"); i >= 0 {
 		return []byte(html[:i] + inject + html[i:])
 	}
 	// No </head> (unexpected) — prepend so the settings still take effect.
 	return []byte(inject + html)
+}
+
+// platformScript is kept in its own source file so the same browser policy can
+// be exercised directly by the dependency-free Node regression harness. It is
+// inlined into every rendered page before the application script executes.
+func platformScript() string {
+	return "<script id=\"cats-platform\">" + platformJS + "</script>\n"
 }
 
 // resolveTheme turns the config's theme *choices* (a name + sparse overrides +

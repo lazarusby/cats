@@ -15,6 +15,9 @@ func appDataDir() (string, error)         { return "", fmt.Errorf("headless app 
 func hydratePlatformEnvironment()         {}
 func runPlatformLocal(appConfig) bool     { return false }
 func installMenu(desktopWindow)           {}
+func initPlatformDescriptor(w desktopWindow, nativeClipboard bool) {
+	w.Init(`window.catsDesktop=Object.freeze({platform:"headless",nativeClipboard:false});`)
+}
 func bindPlatformBridges(desktopWindow) error {
 	return nil
 }

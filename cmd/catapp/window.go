@@ -13,6 +13,7 @@ type desktopWindow interface {
 	SetSize(int, int, sizeHint)
 	Navigate(string)
 	SetHtml(string)
+	Init(string)
 	Eval(string)
 	Bind(string, interface{}) error
 }

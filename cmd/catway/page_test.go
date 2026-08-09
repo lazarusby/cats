@@ -17,6 +17,8 @@ func TestRenderPageInjects(t *testing.T) {
 	out := string(renderPage([]byte(baseHead), config.Default()))
 
 	for _, want := range []string{
+		`<script id="cats-platform">`,
+		`root.CatsPlatform = api`,
 		`<style id="cats-config-theme">`,
 		`--bg:#1f2420;`,
 		`window.__catsKeys=`,
@@ -32,7 +34,7 @@ func TestRenderPageInjects(t *testing.T) {
 	if head < 0 {
 		t.Fatal("no </head> in output")
 	}
-	if strings.Index(out, "cats-config-theme") > head || strings.Index(out, "__catsKeys") > head {
+	if strings.Index(out, "cats-platform") > head || strings.Index(out, "cats-config-theme") > head || strings.Index(out, "__catsKeys") > head {
 		t.Fatal("injections must precede </head>")
 	}
 }

@@ -17,6 +17,14 @@ import (
 // Environment hydration happens inside cats-wsl-host, not the Windows process.
 func hydratePlatformEnvironment() {}
 
+func initPlatformDescriptor(w desktopWindow, nativeClipboard bool) {
+	value := "false"
+	if nativeClipboard {
+		value = "true"
+	}
+	w.Init(`window.catsDesktop=Object.freeze({platform:"windows",nativeClipboard:` + value + `});`)
+}
+
 // Windows owns local startup asynchronously so a slow/cold WSL launch always
 // has a real, cancellable window instead of leaving WebView2 blank.
 func runPlatformLocal(cfg appConfig) bool {

@@ -50,6 +50,12 @@ type WindowsKeyEvent struct {
 	Modifiers  uint32
 }
 
+// WindowsPermissionKind is the WebView2 permission kind presented to the
+// application policy. Only notifications are currently exposed by name.
+type WindowsPermissionKind uint32
+
+const WindowsPermissionNotifications WindowsPermissionKind = 4
+
 const (
 	WindowsModifierShift = 1 << iota
 	WindowsModifierControl
@@ -61,6 +67,7 @@ const (
 type windowsHookCallbacks struct {
 	navigation  func(string, WindowsNavigationKind) WindowsNavigationAction
 	accelerator func(WindowsKeyEvent) bool
+	permission  func(string, WindowsPermissionKind, bool) bool
 }
 
 // WindowsHooks owns native WebView2 event registrations. Close must run on the
@@ -70,18 +77,21 @@ type WindowsHooks struct {
 	handle cgo.Handle
 }
 
-// InstallWindowsHooks attaches top-level navigation, new-window, and
-// accelerator callbacks to the controller already created by webview.New.
+// InstallWindowsHooks attaches top-level navigation, new-window, accelerator,
+// and permission callbacks to the controller already created by webview.New.
 func InstallWindowsHooks(
 	w WebView,
 	navigation func(string, WindowsNavigationKind) WindowsNavigationAction,
 	accelerator func(WindowsKeyEvent) bool,
+	permission func(string, WindowsPermissionKind, bool) bool,
 ) (*WindowsHooks, error) {
 	concrete, ok := w.(*webview)
 	if !ok || concrete.w == nil {
 		return nil, fmt.Errorf("webview: Windows hooks require a live native WebView")
 	}
-	handle := cgo.NewHandle(windowsHookCallbacks{navigation: navigation, accelerator: accelerator})
+	handle := cgo.NewHandle(windowsHookCallbacks{
+		navigation: navigation, accelerator: accelerator, permission: permission,
+	})
 	var code C.int
 	native := C.webview_install_windows_hooks(concrete.w, C.uintptr_t(handle), &code)
 	if native == nil {
@@ -89,6 +99,18 @@ func InstallWindowsHooks(
 		return nil, fmt.Errorf("webview: install Windows hooks failed (HRESULT 0x%08x)", uint32(code))
 	}
 	return &WindowsHooks{native: native, handle: handle}, nil
+}
+
+//export goWebviewWindowsPermission
+func goWebviewWindowsPermission(rawHandle C.uintptr_t, rawURI *C.uint16_t, kind C.uint32_t, userInitiated C.int) (allowed C.int) {
+	defer func() { _ = recover() }()
+	callbacks := cgo.Handle(rawHandle).Value().(windowsHookCallbacks)
+	if callbacks.permission != nil && callbacks.permission(
+		utf16PointerString(rawURI), WindowsPermissionKind(kind), userInitiated != 0,
+	) {
+		return 1
+	}
+	return 0
 }
 
 // Close detaches callbacks and releases their Go handle. It is idempotent.

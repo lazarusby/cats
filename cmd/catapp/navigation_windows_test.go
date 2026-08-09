@@ -34,6 +34,14 @@ func TestWindowsNavigationPolicy(t *testing.T) {
 			t.Errorf("decide(%q, %v) = %v, want %v", tc.url, tc.newWindow, got, tc.want)
 		}
 	}
+	if !policy.allowsTrustedOrigin("https://cats.example/notify") {
+		t.Error("trusted notification origin was denied")
+	}
+	for _, raw := range []string{"https://other.example/notify", "file:///C:/notify", "not a URL"} {
+		if policy.allowsTrustedOrigin(raw) {
+			t.Errorf("untrusted permission origin %q was allowed", raw)
+		}
+	}
 }
 
 func TestValidateRemoteURL(t *testing.T) {

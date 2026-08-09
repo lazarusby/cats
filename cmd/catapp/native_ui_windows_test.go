@@ -19,11 +19,14 @@ var windowsUIIntegration = flag.Bool("cats-windows-ui-integration", false,
 	"run hidden native WebView2, cookie, menu, navigation, and clipboard integration tests")
 
 type nativeUIReport struct {
-	Path          string `json:"path"`
-	Cookie        bool   `json:"cookie"`
-	ClipboardRead bool   `json:"clipboard_read"`
-	ClipboardOK   bool   `json:"clipboard_ok"`
-	Location      string `json:"location"`
+	Path                   string `json:"path"`
+	Cookie                 bool   `json:"cookie"`
+	ClipboardRead          bool   `json:"clipboard_read"`
+	ClipboardOK            bool   `json:"clipboard_ok"`
+	DesktopPlatform        string `json:"desktop_platform"`
+	DesktopNativeClipboard bool   `json:"desktop_native_clipboard"`
+	NotificationPermission string `json:"notification_permission"`
+	Location               string `json:"location"`
 }
 
 type nativeE2EReport struct {
@@ -54,9 +57,14 @@ location.href="file:///C:/cats-navigation-must-be-denied";
 setTimeout(async()=>{
   let clipboardOK=true;
   try { await window.catsClipRead(); } catch (_) { clipboardOK=false; }
+  let notificationPermission="unsupported";
+  try { notificationPermission=await Notification.requestPermission(); } catch (_) {}
   window.catsUIReport(JSON.stringify({path:location.pathname,
     cookie:document.cookie.includes("cats_native_ui=ok"),
     clipboard_read:typeof window.catsClipRead==="function",clipboard_ok:clipboardOK,
+    desktop_platform:window.catsDesktop&&window.catsDesktop.platform,
+    desktop_native_clipboard:!!(window.catsDesktop&&window.catsDesktop.nativeClipboard),
+    notification_permission:notificationPermission,
     location:location.href}));
 },250);
 </script>`)
@@ -65,6 +73,8 @@ setTimeout(async()=>{
 window.catsUIReport(JSON.stringify({path:location.pathname,
   cookie:document.cookie.includes("cats_native_ui=ok"),
   clipboard_read:typeof window.catsClipRead==="function",clipboard_ok:true,
+  desktop_platform:window.catsDesktop&&window.catsDesktop.platform,
+  desktop_native_clipboard:!!(window.catsDesktop&&window.catsDesktop.nativeClipboard),
   location:location.href}));
 </script>`)
 		default:
@@ -74,7 +84,9 @@ window.catsUIReport(JSON.stringify({path:location.pathname,
 	defer server.Close()
 
 	first := runHiddenNativePage(t, server.URL+"/start")
-	if first.Path != "/route" || !first.Cookie || !first.ClipboardRead || !first.ClipboardOK {
+	if first.Path != "/route" || !first.Cookie || !first.ClipboardRead || !first.ClipboardOK ||
+		first.DesktopPlatform != "windows" || !first.DesktopNativeClipboard ||
+		first.NotificationPermission != "granted" {
 		t.Fatalf("first native report = %+v", first)
 	}
 	if !strings.HasPrefix(first.Location, server.URL+"/route") {
@@ -82,7 +94,8 @@ window.catsUIReport(JSON.stringify({path:location.pathname,
 	}
 	time.Sleep(500 * time.Millisecond) // allow WebView2's profile store to flush
 	second := runHiddenNativePage(t, server.URL+"/persist")
-	if second.Path != "/persist" || !second.Cookie || !second.ClipboardRead {
+	if second.Path != "/persist" || !second.Cookie || !second.ClipboardRead ||
+		second.DesktopPlatform != "windows" || !second.DesktopNativeClipboard {
 		t.Fatalf("persisted native report = %+v", second)
 	}
 

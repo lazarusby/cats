@@ -173,6 +173,34 @@ func TestZoomFontDispatchesToPageHook(t *testing.T) {
 	}
 }
 
+func TestPlatformDescriptorUsesPageInitialization(t *testing.T) {
+	w := &fakeWebView{}
+	initPlatformDescriptor(w, true)
+	if len(w.inits) != 1 {
+		t.Fatalf("Init calls = %d, want 1", len(w.inits))
+	}
+	init := w.inits[0]
+	for _, want := range []string{"window.catsDesktop", "Object.freeze", "nativeClipboard:"} {
+		if !strings.Contains(init, want) {
+			t.Errorf("descriptor Init missing %q: %s", want, init)
+		}
+	}
+	switch runtime.GOOS {
+	case "windows":
+		if !strings.Contains(init, `platform:"windows"`) || !strings.Contains(init, "nativeClipboard:true") {
+			t.Errorf("Windows descriptor = %s", init)
+		}
+	case "darwin":
+		if !strings.Contains(init, `platform:"macos"`) || !strings.Contains(init, "nativeClipboard:true") {
+			t.Errorf("Darwin descriptor = %s", init)
+		}
+	default: // catapp_headless test adapter
+		if !strings.Contains(init, `platform:"headless"`) || !strings.Contains(init, "nativeClipboard:false") {
+			t.Errorf("headless descriptor = %s", init)
+		}
+	}
+}
+
 func ptr(value string) *string { return &value }
 
 type fakeBackend struct {
@@ -192,6 +220,7 @@ type fakeWebView struct {
 	bindings   []string
 	bound      map[string]interface{}
 	eval       string
+	inits      []string
 	title      string
 	url        string
 	html       string
@@ -224,6 +253,7 @@ func (w *fakeWebView) Navigate(url string) {
 	}
 }
 func (w *fakeWebView) SetHtml(page string) { w.html = page }
+func (w *fakeWebView) Init(js string)      { w.inits = append(w.inits, js) }
 func (w *fakeWebView) Eval(js string)      { w.eval = js }
 func (w *fakeWebView) Bind(name string, fn interface{}) error {
 	w.bindings = append(w.bindings, name)

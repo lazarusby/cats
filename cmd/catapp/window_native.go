@@ -31,6 +31,7 @@ func (w *nativeWindow) Navigate(url string) {
 	w.w.Navigate(url)
 }
 func (w *nativeWindow) SetHtml(page string)            { w.w.SetHtml(page) }
+func (w *nativeWindow) Init(js string)                 { w.w.Init(js) }
 func (w *nativeWindow) Eval(js string)                 { w.w.Eval(js) }
 func (w *nativeWindow) Bind(name string, fn any) error { return w.w.Bind(name, fn) }
 func (w *nativeWindow) SetSize(width, height int, hint sizeHint) {
