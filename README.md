@@ -72,6 +72,19 @@ MKDOCS_CONFIG=mkdocs.yml PORT=8000 gkdocs
 MKDOCS_CONFIG=mkdocs.yml PORT=8000 go run github.com/rohanthewiz/gkdocs/cmd/gkdocs@latest
 ```
 
+The config is also a valid mkdocs one, if you would rather build it that way:
+
+```sh
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements-docs.txt
+mkdocs serve            # or: mkdocs build --strict
+```
+
+Both renderers must stay working — the pages use mermaid and plain markdown
+only, no renderer-specific syntax. CI runs `mkdocs build --strict`, which fails
+on a broken cross-reference or `#anchor`, and rejects `!!!` admonitions (gkdocs
+renders those as literal text — use a `> **Note — ...**` blockquote).
+
 Start with [Architecture → Overview](docs/architecture/index.md) for the
 component map and the three run topologies (standalone Mac, Mac client + Linux
 server, web client + Mac server), or
@@ -425,6 +438,13 @@ derivation table (or required keys) in `internal/theme/theme.go`, give
 same fallback value in `:root`) in the stylesheet. The canvas-side colors
 (`term-fg/bg`, `sel-fill`, `cm-cursor`, `scroll-thumb*`) are re-read from the
 CSS custom properties by `readThemeVars()` in the page script.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE). Third-party code carried in this repository
+(notably the vendored Ghostty sources under
+[`third_party/libghostty-vt/`](third_party/libghostty-vt/)) keeps its own
+license; see [`NOTICE`](NOTICE) for attributions.
 
 ## History
 

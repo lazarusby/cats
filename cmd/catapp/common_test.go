@@ -127,7 +127,7 @@ func TestModeAndRemoteTitle(t *testing.T) {
 	if isRemoteMode(appConfig{Mode: "unknown"}) {
 		t.Fatal("unknown mode must retain the local fallback")
 	}
-	if got, want := remoteTitle("https://cats.example:9443/path"), "cats — cats.example:9443"; got != want {
+	if got, want := remoteTitle("https://cats.example:9443/path"), "Cats Mux — cats.example:9443"; got != want {
 		t.Fatalf("remoteTitle = %q, want %q", got, want)
 	}
 	if got := remoteTitle(":bad-url"); got != windowTitle {

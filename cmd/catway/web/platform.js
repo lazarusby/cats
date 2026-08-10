@@ -33,6 +33,7 @@
     return Object.freeze({
       palette: mac ? "⌘K" : "Ctrl+Alt+K",
       paletteKeys: mac ? ["⌘K", "Ctrl+Alt+K"] : ["Ctrl+Alt+K"],
+      sidebar: mac ? "⌘B" : "Ctrl+Alt+B",
       paste: mac ? "⌘V" : "Ctrl+Shift+V",
       fontIncrease: mac ? "⌘+" : "Ctrl++",
       fontDecrease: mac ? "⌘-" : "Ctrl+-",
@@ -63,6 +64,10 @@
     if (down && event.code === "KeyK" &&
         ((mac && event.metaKey && !event.ctrlKey) ||
          (event.ctrlKey && event.altKey && !event.metaKey && !altGraph))) return "palette";
+
+    if (down && event.code === "KeyB" &&
+        ((mac && event.metaKey && !event.ctrlKey) ||
+         (windows && event.ctrlKey && event.altKey && !event.metaKey && !altGraph))) return "sidebar-toggle";
 
     if (down && event.code === "KeyV" &&
         ((mac && event.metaKey && !event.ctrlKey) ||

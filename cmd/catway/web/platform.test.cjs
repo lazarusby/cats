@@ -33,6 +33,7 @@ test("platform labels retain Mac chords and use Windows-safe chords", () => {
   assert.equal(mac.fontIncrease, "⌘+");
   const win = platform.shortcuts(platform.describe({ platform: "windows" }));
   assert.equal(win.palette, "Ctrl+Alt+K");
+  assert.equal(win.sidebar, "Ctrl+Alt+B");
   assert.equal(win.paste, "Ctrl+Shift+V");
   assert.equal(win.fontReset, "Ctrl+0");
 });
@@ -60,12 +61,14 @@ test("palette, paste, font, edit, and terminal shortcut ownership", () => {
   const mac = platform.describe({ platform: "macos" });
   const win = platform.describe({ platform: "windows" });
   assert.equal(platform.keyboardAction(key({ code: "KeyK", metaKey: true }), mac), "palette");
+  assert.equal(platform.keyboardAction(key({ code: "KeyB", metaKey: true }), mac), "sidebar-toggle");
   assert.equal(platform.keyboardAction(key({ code: "KeyV", metaKey: true }), mac), "paste");
   assert.equal(platform.keyboardAction(key({ code: "Equal", metaKey: true }), mac), "font-increase");
   assert.equal(platform.keyboardAction(key({ code: "KeyC", metaKey: true }), mac), "terminal");
   assert.equal(platform.keyboardAction(key({ code: "KeyQ", metaKey: true }), mac), "browser");
 
   assert.equal(platform.keyboardAction(key({ code: "KeyK", ctrlKey: true, altKey: true }), win), "palette");
+  assert.equal(platform.keyboardAction(key({ code: "KeyB", ctrlKey: true, altKey: true }), win), "sidebar-toggle");
   assert.equal(platform.keyboardAction(key({ code: "KeyV", ctrlKey: true, shiftKey: true }), win), "paste");
   assert.equal(platform.keyboardAction(key({ code: "Equal", ctrlKey: true, shiftKey: true }), win), "font-increase");
   assert.equal(platform.keyboardAction(key({ code: "Minus", ctrlKey: true }), win), "font-decrease");

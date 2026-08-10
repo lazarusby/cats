@@ -13,7 +13,7 @@ func TestRemoteModeNavigatesSavedTargetWithoutLocalBackend(t *testing.T) {
 	if got, want := w.url, "https://cats.example/session"; got != want {
 		t.Fatalf("navigated to %q, want %q", got, want)
 	}
-	if got, want := w.title, "cats — cats.example"; got != want {
+	if got, want := w.title, "Cats Mux — cats.example"; got != want {
 		t.Fatalf("title = %q, want %q", got, want)
 	}
 	if !w.ran || !w.destroy {
@@ -39,7 +39,7 @@ func TestRemoteFirstRunConnectsInSameWindow(t *testing.T) {
 	if got, want := w.url, "https://remote.example/cats"; got != want {
 		t.Fatalf("connect callback navigated to %q, want %q", got, want)
 	}
-	if got, want := w.title, "cats — remote.example"; got != want {
+	if got, want := w.title, "Cats Mux — remote.example"; got != want {
 		t.Fatalf("connect callback title = %q, want %q", got, want)
 	}
 }

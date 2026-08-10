@@ -444,11 +444,39 @@ type UsageGroup struct {
 // there is no denominator to divide by — a local count fills Detail instead and
 // leaves Pct at -1, so a missing number reads as missing rather than as zero.
 // ResetsAt is when the window rolls over (RFC 3339), "" when unknown.
+//
+// Headline marks the one row that stands in for its whole group when the group
+// is folded away. It is the server's call rather than the front-end's for the
+// same reason the row names are: which of a provider's meters answers the
+// question the section is scanned for — Claude's 5-hour window, not its week;
+// the host's memory, not its disk — is knowledge about the provider, and the
+// browser has none. At most one row per group carries it; a group that marks
+// none leaves the front-end to fall back to whatever it showed before.
+//
+// SoonSecs is how long before ResetsAt the row's countdown deserves a warning
+// colour — the point at which "when does this roll over" stops being background
+// and starts being something to plan around. It scales with the window and not
+// with the clock: half an hour left in a five-hour window is the last tenth of
+// it, while half an hour left in a week is a rounding error nobody could act on,
+// and by the time a week is worth mentioning at all there are a couple of hours
+// left in it. Only the provider knows which of its rows is which, for the same
+// reason it owns Name and Headline, so the number is sent rather than inferred
+// from a name the browser would have to enumerate. 0 means "no opinion" and
+// leaves the front-end its own default.
+//
+// Spark is the row's recent history, oldest first, in the same units as Pct: a
+// front-end may draw it as a small chart beside the current reading. It is sent
+// only for a row whose movement between polls is itself the information (host
+// CPU), because a value that a two-minute poll captures faithfully — a weekly
+// window, a disk — has nothing to plot that the number does not already say.
 type UsageWindow struct {
-	Name     string  `json:"name"`
-	Pct      float64 `json:"pct"`
-	ResetsAt string  `json:"resets_at,omitempty"`
-	Detail   string  `json:"detail,omitempty"`
+	Name     string    `json:"name"`
+	Pct      float64   `json:"pct"`
+	ResetsAt string    `json:"resets_at,omitempty"`
+	Detail   string    `json:"detail,omitempty"`
+	Headline bool      `json:"headline,omitempty"`
+	SoonSecs int       `json:"soon_secs,omitempty"`
+	Spark    []float64 `json:"spark,omitempty"`
 }
 
 // UsagePctUnknown is UsageWindow.Pct's "no denominator" value.

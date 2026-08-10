@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-<title>cats</title>
+<title>Cats Mux</title>
 <style>
   :root {
     /* GoNotes-style dark green theme: warm gray-green surfaces, green accent.
@@ -63,39 +63,195 @@
     /* Chat column width. 0 keeps the grid math identical to the pre-chat
        layout when the panel is closed; body.chat-open widens it. */
     --chat-w:0px;
+    /* Splitter column width. Its own variable because the folded sidebar widens
+       it (body.sb-hidden) to carry a visible reveal handle, and #banner has to
+       clear both tracks to sit flush against the terminals. */
+    --gutter-w:5px;
   }
   body.chat-open { --chat-w:340px; }
   html,body { margin:0; height:100%; background:var(--bg); color:var(--fg);
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; overflow:hidden; }
-  #app { position:fixed; inset:0; display:grid; grid-template-columns:var(--sidebar-w) 5px 1fr var(--chat-w); }
+  #app { position:fixed; inset:0; display:grid; grid-template-columns:var(--sidebar-w) var(--gutter-w) 1fr var(--chat-w); }
+  /* Each column is nailed to its child by hand rather than left to auto-placement.
+     Auto-placement fills tracks in DOM order from the grid items that exist, so a
+     child that goes display:none (body.sb-hidden #sidebar) does not leave a hole —
+     it drops out of the sequence and every later child slides one track left. That
+     put the splitter in the 0px sidebar track (nothing left to click to reveal) and
+     #main in the 5px gutter track (the terminals squeezed to a sliver), which is
+     unrecoverable without the keyboard. Explicit placement is immune: a hidden
+     child's track simply stays empty. */
+  #sidebar  { grid-column:1; }
+  #splitter { grid-column:2; }
+  #main     { grid-column:3; }
+  #chat     { grid-column:4; }
 
   /* ---- Splitter ----
      A five-pixel gutter between the sidebar and the terminals. It sits in its
      own grid column rather than straddling the border, so dragging it never
      lands on a pane's edge, and it keeps the sidebar's own hairline as the
-     visible seam until you actually reach for it. */
-  #splitter { cursor:col-resize; background:transparent; }
+     visible seam until you actually reach for it.
+
+     Laid out as a centering flex box purely so the folded state's reveal handle
+     (#splitter::after) can sit at the vertical middle without measuring anything;
+     unfolded, the pseudo-element has no content and this costs nothing. */
+  #splitter { cursor:col-resize; background:transparent; display:flex; align-items:center; }
   #splitter:hover, #splitter.drag { background:var(--accent-dim); }
   /* While dragging, the pointer is captured but the panes below still hand out
      text cursors and selections; this shuts both off for the duration. */
   body.splitting { cursor:col-resize; user-select:none; }
 
+  /* ---- Folded sidebar ----
+     The column goes to nothing rather than merely narrow: --sidebar-w is
+     re-declared on <body>, which beats the inline value setSidebarWidth writes
+     on :root for everything inside it (the #app grid track, and #banner's left
+     edge, both of which read the same variable) while leaving that stored width
+     untouched for the reveal. #sidebar itself leaves the flow so its content
+     cannot paint through a zero-width track.
+
+     The reveal handle rides in the splitter's own grid column, which is the one
+     place in the window that can carry a visible control for *zero* vertical
+     cost: it is already a full-height strip, so a tab drawn in it steals no
+     terminal row. A handle along the top of #main would have taken one row from
+     every pane, permanently, for a control used twice a day; a floating overlay
+     would have sat on top of terminal text and swallowed clicks and selections
+     near the left edge. This does neither — it is in the layout, and the layout
+     already had room for it in the one axis that was free.
+
+     Folded, the gutter widens from 5px to 14px. That is the whole price, it is
+     horizontal, and it is paid only while folded — the sidebar it replaces was
+     ~290px, so the terminals still gain nearly all of the column back. */
+  body.sb-hidden { --sidebar-w:0px; --gutter-w:14px; }
+  body.sb-hidden #sidebar { display:none; }
+  /* The strip itself stays unpainted so the handle reads as one distinct object
+     rather than as a lit-up edge of the window; the full 14px column remains the
+     click target regardless of where in it the pointer lands. */
+  body.sb-hidden #splitter { background:transparent; cursor:pointer; }
+  /* The handle: a tab flush with the window's left edge, rounded on the side it
+     opens toward, with a chevron pointing the way the column will come back.
+     46px tall is enough to read as a grab handle at a glance and to hit without
+     aiming, and it is centered, so it never collides with the banner (which
+     overlaps the top of this column when it is up). */
+  body.sb-hidden #splitter::after {
+    content:"\203A"; width:100%; height:46px; box-sizing:border-box;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--panel2); color:var(--fg-soft);
+    border:1px solid var(--line); border-left:none; border-radius:0 5px 5px 0;
+    font-size:14px; line-height:1; }
+  /* Folded, the handle is also the only surface an agent's state can reach, so
+     it carries the strongest one waiting (paintSplitterAttention). This covers
+     the one case the auto-reveal cannot: the column was folded again *while* an
+     agent was already blocked or already done, so no state change is coming to
+     re-open it. The state colors the tab's border and chevron rather than
+     flooding the strip — a 14px full-height bar of --err is a fire alarm for
+     what is a "someone is waiting on you" hint, and coloring the object the eye
+     already goes to says the same thing without repainting the window's edge. */
+  body.sb-hidden #splitter.attn-done::after {
+    border-color:var(--done); color:var(--done); }
+  body.sb-hidden #splitter.attn-blocked::after {
+    border-color:var(--err); color:var(--err); }
+  /* Last, so pointing at the handle still answers under either attention state. */
+  body.sb-hidden #splitter:hover::after, body.sb-hidden #splitter.drag::after {
+    background:var(--accent-dim); border-color:var(--accent); color:var(--fg-bright); }
+
   /* ---- Sidebar ---- */
   #sidebar { background:var(--panel); border-right:1px solid var(--line);
     display:flex; flex-direction:column; overflow-y:auto; min-height:0; }
   #brand { font-size:calc(13px * var(--sb-scale)); font-weight:600; letter-spacing:.5px; color:var(--fg-strong);
-    padding:12px 14px; border-bottom:1px solid var(--line); }
+    padding:12px 14px; border-bottom:1px solid var(--line);
+    /* A line break is allowed either side of the inline mark, so a sidebar
+       dragged to its 150px floor (or a large --sb-scale) could otherwise drop
+       the cat onto its own line above the word. Held on one line, the build
+       badge is the thing that gives way, which is the right thing to lose. */
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    /* Both halves of this are load-bearing on a short window, and the reason is
+       the line above: a flex item's automatic minimum size is only its content
+       height while overflow is `visible`. The `overflow:hidden` we need for the
+       ellipsis drops that floor to zero, so when the sidebar's sections overflow
+       a short viewport the brand is the one child that CAN give way — it gets
+       squeezed to a sliver and clips its own logo, instead of #sidebar's
+       overflow-y:auto scrolling. flex:0 0 auto puts the floor back explicitly,
+       which is what we wanted from `auto` anyway. Every other #sidebar child
+       leaves overflow visible, so they keep the automatic floor for free. */
+    flex:0 0 auto;
+    /* Anchor for the fold button below, plus the gutter it sits in. The right
+       pad is reserved rather than left to chance: the wordmark and its build
+       badge are a nowrap run that ellipsises, and without the reservation a
+       narrow column would run that text under the button instead of clipping
+       short of it. The two lengths are coupled — see #sb-fold. */
+    position:relative; padding-right:calc(10px + 18px * var(--sb-scale)); }
   #brand small { color:var(--muted); font-weight:400; margin-left:6px; }
+  /* The fold button: the pointer's way to put the column away, paired with the
+     reveal handle that takes its place (body.sb-hidden #splitter::after). It is
+     the mirrored glyph of that handle — '‹' here, '›' there — so the pair reads
+     as one control that moves with the column rather than as two unrelated
+     buttons.
+
+     Absolutely positioned rather than laid out. #brand is a nowrap inline run
+     (mark, wordmark, build badge) and the note above it explains why that has
+     to stay inline; a flex row would have re-spaced the badge. Taking the
+     button out of flow leaves that run exactly as it was and costs the column
+     no height — it sits in the padding the rule above reserves for it.
+
+     No tab stop. The window-level keydown handler routes the keyboard to the
+     focused pane and preventDefaults nearly everything, so a focused button
+     could never be activated by Enter or Space — leaving it tab-focusable would
+     build a stop that swallows focus and does nothing. ⌘B is the keyboard path,
+     and the title says so. */
+  #sb-fold { position:absolute; top:50%; right:8px; transform:translateY(-50%);
+    width:calc(18px * var(--sb-scale)); height:calc(20px * var(--sb-scale));
+    display:flex; align-items:center; justify-content:center; padding:0;
+    background:none; border:1px solid transparent; border-radius:4px;
+    color:var(--muted); font-family:inherit; font-size:calc(14px * var(--sb-scale));
+    line-height:1; cursor:pointer; }
+  /* Lit the same way the reveal handle lights on hover, for the same reason:
+     the two are one control, so they answer the pointer identically. */
+  #sb-fold:hover { background:var(--accent-dim); border-color:var(--accent); color:var(--fg-bright); }
+  /* The mark sits inline and rides the text baseline rather than turning
+     #brand into a flex row: the build badge appended below is a sibling of the
+     wordmark, and a flex context would have re-spaced it. The nudge scales
+     with --sb-scale along with the box so the pairing holds at every zoom.
+     Accent-colored so the logo reads as mark + wordmark, not one run of text.
+
+     The two lengths below are coupled and must move together, and the nudge is
+     derived from the artwork's crop rather than guessed. The mark's viewBox is
+     cropped tight to its ink (see scripts/icon/gen-trace), so only the 2-unit
+     pad sits below the lowest ink on a 133.93-unit box: 2/133.93 = 1.5% of the
+     height. The box is taller than it is wide, so the glyph scales to the box's
+     HEIGHT and that pad is 0.28px at 19px — rounded to a half-pixel nudge,
+     which parks the mark on the text baseline. Re-crop the artwork and this has
+     to be re-derived.
+
+     The lowest ink is the chin: mark 06 is a head with no ground line under it,
+     so the chin is what sits on the text baseline. (Mark 10, which this
+     replaced, ended in a cursor bar below the chin and aligned THAT instead —
+     if a mark with a bar ever comes back, align the bar, or it hangs below the
+     wordmark like a descender.) */
+  #brand .mark { width:calc(19px * var(--sb-scale)); height:calc(19px * var(--sb-scale));
+    vertical-align:calc(-0.5px * var(--sb-scale)); margin-right:6px; color:var(--accent); }
   /* Build badge: the short git hash this catway was built from (trailing '*' =
      built from a modified tree). Its hover card carries the commit subject —
-     see initBuildBadge in JS. Mostly it answers "is this install stale?". */
-  #brand small.hash { cursor:help; }
-  #brand small.hash:hover { color:var(--accent); }
+     see initBuildBadge in JS. Mostly it answers "is this install stale?".
+
+     It is a build fingerprint, not a label anyone reads on purpose, so it sits
+     below the wordmark's weight: an explicit 9px (rather than <small>'s inherited
+     ~0.83em of the 13px brand) scaled with --sb-scale like every other sidebar
+     length, plus an opacity knock-down on top of --muted — the same recipe the
+     usage-list footnotes use. Hover restores full opacity along with the accent
+     so the thing you're about to read a tooltip from doesn't stay faded. */
+  #brand small.hash { cursor:help; font-size:calc(9px * var(--sb-scale)); opacity:.7; }
+  #brand small.hash:hover { color:var(--accent); opacity:1; }
   #sidebar section { padding:10px 6px 8px; }
   /* Splitter between Workspaces / Panes / Agents — the headings alone read as
      one long list once a workspace has more than a couple of panes. */
   #sidebar section + section { border-top:1px solid var(--line); }
-  #sidebar h2 { font-size:calc(10px * var(--sb-scale)); text-transform:uppercase; letter-spacing:.8px; color:var(--heading);
+  /* The section headings sit at the top of the sidebar's three-tier scale:
+     section title (12px) > group subtitle (11px) > row (12px, but lower-case,
+     regular weight and un-tracked). A heading used to be set two steps *below*
+     its own rows, which inverted the hierarchy — the rows read as the loudest
+     thing in the section and the label above them as a footnote. Matching the
+     row's pixel size is enough to win it back: uppercase, 700 weight and the
+     tracking do the rest, so the title dominates without shouting. */
+  #sidebar h2 { font-size:calc(12px * var(--sb-scale)); text-transform:uppercase; letter-spacing:.8px; color:var(--heading);
     font-weight:700; margin:0 0 6px; padding:0 8px; display:flex; align-items:baseline; }
   /* Section-level controls, pinned to the heading's right edge. Muted until
      hovered so the heading still reads as a label, not a toolbar. */
@@ -104,7 +260,10 @@
     font:inherit; font-size:calc(11px * var(--sb-scale)); line-height:1; color:var(--muted); }
   #sidebar h2 .hctl button:hover { color:var(--accent); }
   #sidebar ul { list-style:none; margin:0; padding:0; }
-  #sidebar li { font-size:calc(12px * var(--sb-scale)); padding:4px 8px; border-radius:4px; white-space:nowrap;
+  /* Rows sit one step under their section title and level with the group
+     subtitles — a subtitle separates itself by case, weight and colour rather
+     than by size, which keeps the whole sidebar inside a two-size scale. */
+  #sidebar li { font-size:calc(11px * var(--sb-scale)); padding:4px 8px; border-radius:4px; white-space:nowrap;
     overflow:hidden; text-overflow:ellipsis; cursor:default; display:flex; align-items:baseline; gap:6px; }
   /* Usage rows stack a label line over a meter, so the row is two lines tall
      rather than the one line every other sidebar row is. */
@@ -112,16 +271,45 @@
   #usage-list li:hover { background:none; }
   #usage-list li.empty { color:var(--muted); font-style:italic; }
   /* A heading over the rows it covers — one per provider, plus the host — in
-     the same register #pane-list's workspace headers use. A header only: no
-     caret, no click, nothing to collapse. Each group is two or three rows, so
-     folding one would be a control that saves nothing.
-     It stays display:block (inherited from the rule above) rather than copying
-     .wsgrp's flex: there is no rollup or caret here to push to the right edge,
-     and its padding is its own — the rows' 3px/5px is tuned around a meter this
-     has not got. */
-  #usage-list li.ugrp { color:var(--ws-heading); font-size:calc(10px * var(--sb-scale));
-    text-transform:uppercase; letter-spacing:.5px; font-weight:600; padding:2px 8px 1px; }
+     the same register #pane-list's workspace headers use, and with the same job:
+     it names the group and folds it. Flex like .wsgrp so the summary and caret
+     can be pushed to the right edge; the padding stays its own — the rows'
+     3px/5px is tuned around a meter this has not got. */
+  #usage-list li.ugrp { color:var(--ws-heading); font-size:calc(11px * var(--sb-scale));
+    text-transform:uppercase; letter-spacing:.5px; font-weight:600; padding:2px 8px 1px;
+    display:flex; align-items:baseline; gap:6px; cursor:pointer; }
   #usage-list li.ugrp.sep { border-top:1px solid var(--line); margin-top:5px; padding-top:7px; }
+  /* Overrides #usage-list li:hover's background:none — these rows ARE clickable,
+     so they take the same hover the pane group headers do. */
+  #usage-list li.ugrp:hover { background:var(--panel2); color:var(--fg-soft); }
+  /* Summary then caret, both pinned right, exactly as in #pane-list. */
+  #usage-list li.ugrp .gsum, #usage-list li.ugrp .car { margin-left:auto; }
+  #usage-list li.ugrp .gsum + .car { margin-left:0; }
+  /* The stand-in reading a folded group shows: the secondary half of the header,
+     so it drops the label's case, tracking and weight, and it takes the warning
+     colors its hidden meter would have taken. */
+  #usage-list li.ugrp .gsum { text-transform:none; letter-spacing:0; font-weight:400;
+    color:var(--muted); font-variant-numeric:tabular-nums; }
+  #usage-list li.ugrp.high .gsum { color:var(--warn); }
+  #usage-list li.ugrp.crit .gsum { color:var(--err); }
+  /* The time left in the quoted window, parenthesised after the reading. It keeps
+     the muted color through .high and .crit — the color in this header means "how
+     much is spent", and a clock that turned red would read as a second alarm for
+     something that is only the window doing what windows do. Sized like .ureset,
+     which is the same fact one line down when the group is unfolded. */
+  #usage-list li.ugrp .gsum .gleft { color:var(--muted);
+    font-size:calc(9px * var(--sb-scale)); opacity:.8; }
+  /* ...with one exception, a window near its rollover — half an hour out on the
+     5-hour, two on a week, each row carrying its own horizon (see usageSoonMs).
+     That is the one time the clock stops being background: whatever is left in
+     the window has to be spent, or planned around, before it rolls. Amber and
+     not red, and only ever amber — this axis is "how long", the .high/.crit
+     axis beside it is "how much", and two things shouting the same color would
+     make it impossible to tell which one is speaking. Specificity carries it
+     over the muted rule above and over .high/.crit, both of which paint .gsum
+     rather than this span. */
+  #usage-list li.ugrp .gsum .gleft.soon { color:var(--warn); opacity:1; }
+  #usage-list li.ugrp .car { font-size:calc(10px * var(--sb-scale)); }
   #usage-list .urow { display:flex; align-items:baseline; gap:6px; }
   /* Body weight and body color: with a genuinely bold heading now above them,
      a row's label is no longer the most important thing in its line, and
@@ -133,6 +321,12 @@
   #usage-list li.high .uval { color:var(--warn); }
   #usage-list li.crit .uval { color:var(--err); }
   #usage-list .ureset { color:var(--muted); font-size:calc(9px * var(--sb-scale)); opacity:.8; }
+  /* The unfolded half of the same warning: a countdown inside its row's horizon
+     lifts out of the muted register. It sits left of .uval, which carries
+     the spent-color, so a row can legitimately show an amber clock beside a
+     calm percentage — that pairing ("barely used, nearly over") is exactly the
+     one the color exists to catch. */
+  #usage-list .ureset.soon { color:var(--warn); opacity:1; }
   #usage-list .umeter { margin-top:3px; height:4px; border-radius:2px; background:var(--panel2);
                         overflow:hidden; }
   #usage-list .umeter > i { display:block; height:100%; width:0; background:var(--accent);
@@ -143,18 +337,51 @@
      so there is no bar to fill — the track is dropped rather than drawn empty,
      which would read as "0% used". */
   #usage-list li.unknown .umeter { display:none; }
+  /* The history strip under a row that has one (host CPU). Full width and
+     stretched by the SVG's own preserveAspectRatio, so nothing in the script has
+     to know the sidebar's width — see usageSpark. It takes the row's warning
+     colors exactly as the meter above it does, so a row that has gone red is red
+     in both of its halves rather than half-warning. */
+  #usage-list .uspark { display:block; width:100%; height:calc(20px * var(--sb-scale));
+                        margin-top:3px; }
+  #usage-list .uspark .sfill { fill:var(--accent); opacity:.16; }
+  #usage-list .uspark .sline { fill:none; stroke:var(--accent); opacity:.85; }
+  #usage-list li.high .uspark .sfill { fill:var(--warn); }
+  #usage-list li.high .uspark .sline { stroke:var(--warn); }
+  #usage-list li.crit .uspark .sfill { fill:var(--err); }
+  #usage-list li.crit .uspark .sline { stroke:var(--err); }
   #usage-list .unote { color:var(--muted); font-size:calc(9px * var(--sb-scale));
                        font-style:italic; padding:1px 8px 3px; }
   /* How old the numbers below are, in the heading beside the control that
      refreshes them. It rides .hctl's right edge but opts out of the heading's
-     uppercase and tracking: it is a reading, not a label. */
+     uppercase and tracking: it is a reading, not a label. It also pins its own
+     size rather than inheriting the heading's — the title grew to lead the
+     section, and an age stamp that grew with it would compete with the label
+     it is meant to annotate. */
   #sidebar h2 .hage { color:var(--muted); font-weight:400; text-transform:none;
-    letter-spacing:0; font-variant-numeric:tabular-nums; margin-right:3px; }
+    letter-spacing:0; font-size:calc(10px * var(--sb-scale));
+    font-variant-numeric:tabular-nums; margin-right:3px; }
+  /* The stand-in a folded *section* shows, when the section had no group headers
+     to carry one (see renderWorkspaces). Same register as .hage for the same
+     reason — it is a reading, not a label — and the same right-edge berth just
+     inboard of the fold pair, which is where .gsum sits in the group headers this
+     is standing in for. It carries no box when empty, so the pointer only meets
+     it while there is something folded to unfold. */
+  #sidebar h2 .hcount { color:var(--muted); font-weight:400; text-transform:none;
+    letter-spacing:0; font-size:calc(10px * var(--sb-scale));
+    font-variant-numeric:tabular-nums; margin-right:5px; cursor:pointer;
+    white-space:nowrap; }
+  #sidebar h2 .hcount:hover { color:var(--fg-soft); }
   /* The refresh control carries a drawn mark (see refreshMark), so it is sized
      in pixels and centered on the heading's text rather than stretching to it. */
   #usage-hctl { align-items:center; }
   #usage-hctl .refresh { display:block; width:calc(12px * var(--sb-scale));
     height:calc(12px * var(--sb-scale)); }
+  /* The fold pair now sits outboard of the refresh (far right of the heading), so
+     the drawn mark needs clearance it did not need when it was the last control:
+     .hctl's 1px gap is tuned for two glyph buttons touching, and a drawn arc
+     abutting a ⊞ reads as one smudged mark at 12px. */
+  #usage-hctl button.uref { margin-right:5px; }
   /* The mark turns while a reading is in flight. The server acks the ask
      immediately and pushes the numbers only when the read lands, so the spin is
      the only thing saying the click was heard. */
@@ -227,18 +454,24 @@
      than on the first pane, so a focused pane never paints across the divider. */
   /* Bold, so the header reads as a heading over its rows rather than as one more
      muted row among them — at this size weight separates the two tiers better than
-     the colour alone did. */
-  #pane-list li.wsgrp { color:var(--ws-heading); font-size:calc(10px * var(--sb-scale)); text-transform:uppercase;
+     the colour alone did.
+     The Workspaces list above splits open from locked with the same kind of header
+     (see renderWorkspaces), so both lists share the style rather than each growing
+     its own copy: a fold header is a fold header wherever it appears. */
+  #pane-list li.wsgrp, #ws-list li.wsgrp { color:var(--ws-heading); font-size:calc(11px * var(--sb-scale)); text-transform:uppercase;
     letter-spacing:.5px; cursor:pointer; font-weight:600; }
-  #pane-list li.wsgrp.sep { border-top:1px solid var(--line); margin-top:5px; padding-top:7px; }
-  #pane-list li.wsgrp:hover { background:var(--panel2); color:var(--fg-soft); }
+  #pane-list li.wsgrp.sep, #ws-list li.wsgrp.sep { border-top:1px solid var(--line); margin-top:5px; padding-top:7px; }
+  #pane-list li.wsgrp:hover, #ws-list li.wsgrp:hover { background:var(--panel2); color:var(--fg-soft); }
   /* The rollup sits ahead of the caret and the pair is pushed to the right edge. */
-  #pane-list li.wsgrp .gsum, #pane-list li.wsgrp .car { margin-left:auto; }
-  #pane-list li.wsgrp .gsum + .car { margin-left:0; }
+  #pane-list li.wsgrp .gsum, #pane-list li.wsgrp .car,
+  #ws-list li.wsgrp .gsum, #ws-list li.wsgrp .car { margin-left:auto; }
+  #pane-list li.wsgrp .gsum + .car, #ws-list li.wsgrp .gsum + .car { margin-left:0; }
   /* The count is the header's secondary half, so it stays at normal weight — only
      the workspace name carries the bold. */
-  #pane-list li.wsgrp .gsum { text-transform:none; letter-spacing:0; font-weight:400; }
-  #pane-list li.wsgrp .car { font-size:calc(9px * var(--sb-scale)); }
+  #pane-list li.wsgrp .gsum, #ws-list li.wsgrp .gsum { text-transform:none; letter-spacing:0; font-weight:400; }
+  /* The caret tracks its header's size — a step under it, as before, so the
+     fold marker stays subordinate to the name it folds. */
+  #pane-list li.wsgrp .car, #ws-list li.wsgrp .car { font-size:calc(10px * var(--sb-scale)); }
   #pane-list .pub { color:var(--accent); }
   #pane-list .ttl { color:var(--muted); overflow:hidden; text-overflow:ellipsis; }
   #pane-list .ag, #agent-list .aname { margin-left:auto; }
@@ -620,9 +853,43 @@
 <body>
 <div id="app">
   <aside id="sidebar">
-    <div id="brand">cats</div>
+    <div id="brand"><!--
+      Mark 06 of the logo exploration: a big cat's head, front on, drawn as one
+      unbroken outline with two eye slits and nothing else. It replaced mark 10,
+      which carried a chevron eye, a muzzle and cheek lines that all fell below
+      one pixel once the mark was shrunk. Both are the same hairline weight;
+      this one simply has less to lose.
+
+      This artwork is TRACED from the reference drawing, not drawn by hand, and
+      the path data below is machine-generated: each stroke of the original is a
+      closed filled ribbon, which is why this is one even-odd path rather than a
+      set of stroked outlines. Do not hand-edit the numbers. Regenerate with
+
+          cd scripts/icon/gen-trace && go run .
+
+      and paste the path from the trace-compact.svg it writes. That file is the
+      same trace simplified for small sizes: at the 19px this renders at, a full
+      source pixel of deviation is a sixth of a screen pixel, so the reduction
+      is invisible here and saves ~25KB in a file that ships whole.
+
+      It fills with currentColor, which the CSS above points at the theme's
+      accent, so the mark follows a live theme switch along with everything else
+      in the sidebar. The app icon cannot do that and bakes the default theme's
+      accent in instead; see scripts/icon/gen-trace.
+
+      The viewBox is cropped tight to the ink; the baseline nudge in the CSS
+      above is derived from that crop, so the two move together.
+    --><svg class="mark" viewBox="36.47 282.34 130.77 133.93" fill="currentColor" fill-rule="evenodd"
+         aria-hidden="true"><path d="M48.00,284.73 C46.65,285.43 42.59,288.53 41.00,291.35 C39.23,294.48 38.58,299.47 38.47,303.00 C38.38,305.91 38.85,307.79 39.71,311.00 C41.12,316.23 46.00,323.69 47.52,331.00 C49.23,339.20 47.42,351.25 48.58,358.00 C49.31,362.20 49.63,364.35 51.70,368.00 C55.02,373.85 65.01,381.56 69.58,388.00 C73.24,393.15 75.19,399.46 77.88,403.00 C79.62,405.29 80.78,406.43 83.00,408.04 C86.04,410.25 90.64,413.22 95.00,414.27 C99.60,415.37 106.01,415.00 110.00,414.17 C112.84,413.58 114.69,412.58 117.00,411.18 C119.69,409.56 122.46,407.64 125.00,404.66 C128.48,400.60 130.81,393.15 134.74,388.00 C138.77,382.71 145.81,377.43 149.00,373.42 C150.95,370.96 151.98,369.47 153.11,367.00 C154.43,364.11 155.45,361.14 156.09,357.00 C157.09,350.59 155.02,340.03 156.56,332.00 C158.09,324.04 164.20,316.08 165.24,309.00 C166.07,303.28 165.52,296.91 164.10,293.00 C163.13,290.34 161.62,288.45 159.76,287.00 C157.92,285.57 155.36,284.40 153.00,284.34 C150.46,284.27 148.10,285.62 145.03,287.00 C140.32,289.12 134.38,295.77 128.00,296.84 C120.88,298.02 110.48,292.55 104.00,292.13 C99.65,291.85 96.98,292.21 93.00,292.84 C88.13,293.61 82.61,297.60 77.00,296.89 C70.09,296.03 60.15,286.46 55.00,284.96 C52.48,284.22 50.16,284.46 49.00,284.53 C48.52,284.56 48.44,284.51 48.00,284.73 Z M48.00,287.94 C46.88,288.84 43.86,291.47 42.73,294.00 C41.40,296.97 40.87,300.66 41.33,305.00 C42.03,311.71 48.53,321.63 50.08,330.00 C51.55,337.97 49.86,347.41 50.75,354.00 C51.39,358.73 52.11,362.53 53.70,366.00 C55.12,369.09 56.99,371.14 59.41,374.00 C62.67,377.86 68.87,382.27 72.00,386.63 C74.65,390.31 75.39,394.67 77.66,398.00 C79.77,401.08 81.94,403.79 85.00,406.05 C88.52,408.66 93.97,411.33 98.00,412.21 C101.19,412.90 104.13,412.60 107.00,412.07 C109.79,411.56 112.31,410.76 115.00,409.16 C118.43,407.13 122.59,403.62 125.41,400.00 C128.29,396.30 128.93,391.43 132.00,387.12 C135.81,381.77 144.20,375.45 147.46,371.00 C149.42,368.34 150.32,366.62 151.30,364.00 C152.42,361.03 153.05,358.01 153.52,354.00 C154.19,348.12 152.46,339.67 153.76,332.00 C155.27,323.12 162.78,311.43 163.17,304.00 C163.42,299.21 161.94,294.75 160.50,292.00 C159.56,290.22 158.42,289.03 157.00,288.24 C155.59,287.46 154.18,286.93 152.00,287.26 C147.17,288.00 135.15,297.87 130.00,299.23 C127.48,299.90 126.17,299.67 124.00,299.35 C121.27,298.96 118.31,297.20 115.00,296.48 C111.10,295.63 107.07,294.80 102.00,294.93 C94.81,295.12 83.89,300.76 76.00,299.43 C68.66,298.18 61.08,290.02 56.00,288.34 C53.18,287.40 50.26,287.17 49.00,287.40 C48.49,287.49 48.42,287.60 48.00,287.94 Z M67.00,337.32 L66.79,339.00 C67.75,339.33 68.81,339.26 69.68,340.00 C70.99,341.11 71.49,344.59 73.00,346.11 C74.39,347.52 76.22,348.30 78.19,349.00 C80.47,349.81 83.40,349.94 86.00,350.41 L88.00,356.34 C88.44,355.89 89.07,355.66 89.32,355.00 C89.73,353.92 89.51,351.81 89.04,350.00 C88.41,347.59 87.07,344.02 85.18,342.00 C83.35,340.06 80.56,338.81 78.00,337.97 C75.43,337.14 71.05,337.09 69.77,337.00 C69.38,336.97 69.31,336.96 69.00,336.98 C68.49,337.02 67.67,337.21 67.00,337.32 Z M115.24,354.00 L117.00,356.35 L118.94,350.00 C122.63,349.11 127.30,349.22 130.00,347.32 C132.37,345.66 133.20,341.26 134.85,340.00 C135.84,339.24 136.86,339.33 137.86,339.00 L137.00,337.20 C134.00,337.37 129.50,337.57 128.00,337.71 C127.50,337.75 127.46,337.71 127.00,337.84 C125.83,338.17 122.61,339.39 121.00,340.53 C119.63,341.51 118.62,342.40 117.74,344.00 C116.45,346.36 116.07,350.67 115.24,354.00 Z M73.00,339.62 C73.52,341.08 73.59,342.88 74.55,344.00 C75.55,345.16 77.36,345.81 79.00,346.37 C80.81,346.99 83.00,347.07 85.00,347.41 C84.71,346.61 84.69,345.79 84.13,345.00 C83.32,343.86 81.60,342.47 80.00,341.63 C78.26,340.72 75.16,340.24 74.00,339.90 C73.53,339.77 73.33,339.71 73.00,339.62 Z M119.51,346.00 L120.00,347.48 C122.67,346.80 126.01,346.84 128.00,345.45 C129.78,344.21 130.48,341.82 131.72,340.00 C131.48,339.90 131.37,339.71 131.00,339.70 C129.77,339.65 125.01,341.09 123.00,342.36 C121.45,343.34 120.68,344.79 119.51,346.00 Z"/></svg>Cats Mux<!--
+      Folds the column away; the reveal handle in the gutter brings it back.
+      tabindex="-1" is deliberate — see the CSS note beside #sb-fold. The build
+      badge is appended into #brand after this at runtime, which is why the
+      button being out of flow matters: DOM order stops deciding what shows up
+      where, so the badge still lands right after the wordmark.
+    --><button id="sb-fold" type="button" tabindex="-1"
+        title="hide the sidebar (⌘B)" aria-label="Hide the sidebar">&#x2039;</button></div>
     <section><h2>Usage<span class="hctl" id="usage-hctl"></span></h2><ul id="usage-list"><li class="empty">…</li></ul></section>
-    <section><h2>Workspaces<span id="ws-global-todo"></span></h2><ul id="ws-list"></ul></section>
+    <section><h2>Workspaces<span id="ws-global-todo"></span><span class="hctl" id="ws-hctl"><span class="hcount" id="ws-count"></span></span></h2><ul id="ws-list"></ul></section>
     <section><h2>Panes<span class="hctl" id="pane-hctl"></span></h2><ul id="pane-list"></ul></section>
     <section><h2>Agents</h2><ul id="agent-list"><li class="empty">none</li></ul></section>
   </aside>
@@ -669,6 +936,7 @@
   const panesEl = document.getElementById("panes");
   const wsListEl = document.getElementById("ws-list");
   const wsGlobalTodoEl = document.getElementById("ws-global-todo");
+  const wsCountEl = document.getElementById("ws-count");
   const paneListEl = document.getElementById("pane-list");
   const agentListEl = document.getElementById("agent-list");
   const usageListEl = document.getElementById("usage-list");
@@ -771,6 +1039,42 @@
   } catch (e) { /* storage disabled or corrupt — start with everything expanded */ }
   function savePaneCollapsed() {
     try { localStorage.setItem(PGRP_KEY, JSON.stringify([...paneCollapsed])); } catch (e) { /* not persisted */ }
+  }
+  // The same arrangement for the Usage section's provider groups, kept separate
+  // from the pane groups rather than merged into one map: the two sections'
+  // group ids come from different namespaces (workspace ids vs. provider ids),
+  // and folding CLAUDE has nothing to do with folding a workspace of panes.
+  const UGRP_KEY = "cats.usage.collapsed";
+  let usageCollapsed = new Set(), usageGroupIDs = [];
+  try {
+    const raw = JSON.parse(localStorage.getItem(UGRP_KEY));
+    if (Array.isArray(raw)) usageCollapsed = new Set(raw);
+  } catch (e) { /* storage disabled or corrupt — start with everything expanded */ }
+  function saveUsageCollapsed() {
+    try { localStorage.setItem(UGRP_KEY, JSON.stringify([...usageCollapsed])); } catch (e) { /* not persisted */ }
+  }
+  // And once more for the Workspaces section, whose groups are the two states a
+  // workspace can be in rather than a list of ids: WS_OPEN and WS_LOCKED. Its own
+  // key for the same reason as above — the namespaces don't overlap, and a folded
+  // "locked" shelf says nothing about which provider or which workspace of panes
+  // you last folded.
+  const WGRP_KEY = "cats.workspaces.collapsed";
+  const WS_OPEN = "open", WS_LOCKED = "locked";
+  // The third id is not a shelf. With nothing locked there is only one shelf and
+  // no header is drawn for it (renderWorkspaces), so the fold pair would have
+  // nothing to act on — WS_ALL is what it acts on instead: the section's own list,
+  // folded behind the count that then appears on the Workspaces heading. It shares
+  // the set above because it is the same question ("what is folded in this
+  // section?") and because collapse-all rewrites the whole set from the ids the
+  // last render drew, which keeps the two spellings from ever both being present.
+  const WS_ALL = "all";
+  let wsCollapsed = new Set(), wsGroupIDs = [];
+  try {
+    const raw = JSON.parse(localStorage.getItem(WGRP_KEY));
+    if (Array.isArray(raw)) wsCollapsed = new Set(raw);
+  } catch (e) { /* storage disabled or corrupt — start with everything expanded */ }
+  function saveWsCollapsed() {
+    try { localStorage.setItem(WGRP_KEY, JSON.stringify([...wsCollapsed])); } catch (e) { /* not persisted */ }
   }
 
   function measure() {
@@ -875,6 +1179,79 @@
   function pane(id) { return panes.get(id) || newPane(id); }
 
   // ---- Layout (D3): position pane DOM from computed rects + render chrome ----
+  // placePane writes one pane's pixel geometry from a rect/inner pair in cells.
+  // Split out of applyLayout because refitLayout below drives the same writes
+  // from rects the server has not sent yet, and the two must not drift.
+  function placePane(p, rect, inner) {
+    const [rx, ry, rw, rh] = rect, [ix, iy, iw, ih] = inner;
+    p.el.style.left = (rx * cellW) + "px";
+    p.el.style.top = (ry * cellH) + "px";
+    p.el.style.width = (rw * cellW) + "px";
+    p.el.style.height = (rh * cellH) + "px";
+    p.chrome.style.height = ((iy - ry) * cellH) + "px";
+    p.canvas.style.left = ((ix - rx) * cellW) + "px";
+    p.canvas.style.top = ((iy - ry) * cellH) + "px";
+    p.canvas.style.width = (iw * cellW) + "px";
+    p.canvas.style.height = (ih * cellH) + "px";
+    p.canvas.width = Math.floor(iw * cellW * dpr);
+    p.canvas.height = Math.floor(ih * cellH * dpr);
+    // Sizing the canvas resets its context (transform included), so the
+    // padded transform is (re)installed per frame in draw() — see setInset.
+    setInset(p, iw * cellW, ih * cellH);
+  }
+
+  // refitLayout re-hangs the panes on the grid we just derived, without waiting
+  // for the server to send a layout for it.
+  //
+  // Why it has to exist: pane geometry is authored by the server in cells and
+  // arrives over the socket, so between "the terminal area just changed size"
+  // and "the new layout landed" the panes are still wearing the old area's
+  // pixels. Folding the sidebar away leaves a bare strip where the panes have
+  // not grown into the space yet; bringing it back is the ugly direction, since
+  // the panes are now wider than #panes and the right-hand one is cut off by its
+  // overflow:hidden — measured at 276px of a 904px area on a 1200px window. It
+  // is one round trip and it corrects itself, but it is a visible lurch every
+  // time the column moves, and on a slow or reconnecting socket it is not brief.
+  //
+  // What it does: scales the last layout's rects from the grid they were
+  // authored for onto the current one. Edges are scaled and rounded, then widths
+  // taken as the difference between neighbouring edges, so panes stay exactly
+  // adjacent — rounding each width independently would open one-cell seams or
+  // overlaps between them. Chrome and border insets are carried across in cells
+  // rather than scaled, because they are fixed furniture: a header is one row
+  // whatever the grid does.
+  //
+  // This is provisional. layoutMsg is never written back to, so the estimate is
+  // always taken from the server's own last word rather than compounding on a
+  // previous estimate, and the real layout overwrites all of it on arrival.
+  function refitLayout() {
+    if (!layoutMsg || !layoutMsg.panes || !layoutMsg.panes.length) return;
+    // The grid the current rects were authored for is the extent they tile.
+    let oldCols = 0, oldRows = 0;
+    for (const pr of layoutMsg.panes) {
+      oldCols = Math.max(oldCols, pr.rect[0] + pr.rect[2]);
+      oldRows = Math.max(oldRows, pr.rect[1] + pr.rect[3]);
+    }
+    if (oldCols < 1 || oldRows < 1) return;
+    if (oldCols === cols && oldRows === rows) return;   // nothing moved
+    const sx = cols / oldCols, sy = rows / oldRows;
+    for (const pr of layoutMsg.panes) {
+      const p = panes.get(pr.pane);
+      if (!p) continue;
+      const [rx, ry, rw, rh] = pr.rect, [ix, iy, iw, ih] = pr.inner;
+      const nx = Math.round(rx * sx), ny = Math.round(ry * sy);
+      const nw = Math.max(1, Math.round((rx + rw) * sx) - nx);
+      const nh = Math.max(1, Math.round((ry + rh) * sy) - ny);
+      // Insets are held in cells: left/top gaps stay put, and the right/bottom
+      // gaps are taken off the new size so the inner box never outgrows its pane.
+      const niw = Math.max(1, nw - (rw - iw)), nih = Math.max(1, nh - (rh - ih));
+      placePane(p, [nx, ny, nw, nh], [nx + (ix - rx), ny + (iy - ry), niw, nih]);
+      // The canvas was just resized, which clears it; repaint from the cells we
+      // already hold rather than leaving a blank pane until the server speaks.
+      scheduleDraw(p);
+    }
+  }
+
   function applyLayout(msg) {
     layoutMsg = msg;
     // Zoom is tab state but renders as pane state: a zoomed tab sends only its
@@ -885,22 +1262,8 @@
       const p = pane(pr.pane);
       seen.add(pr.pane);
       p.pub = pr.pub; p.info = pr;
-      const [rx, ry, rw, rh] = pr.rect, [ix, iy, iw, ih] = pr.inner;
-      p.el.style.left = (rx * cellW) + "px";
-      p.el.style.top = (ry * cellH) + "px";
-      p.el.style.width = (rw * cellW) + "px";
-      p.el.style.height = (rh * cellH) + "px";
+      placePane(p, pr.rect, pr.inner);
       p.el.classList.toggle("focused", !!pr.focused);
-      p.chrome.style.height = ((iy - ry) * cellH) + "px";
-      p.canvas.style.left = ((ix - rx) * cellW) + "px";
-      p.canvas.style.top = ((iy - ry) * cellH) + "px";
-      p.canvas.style.width = (iw * cellW) + "px";
-      p.canvas.style.height = (ih * cellH) + "px";
-      p.canvas.width = Math.floor(iw * cellW * dpr);
-      p.canvas.height = Math.floor(ih * cellH * dpr);
-      // Sizing the canvas resets its context (transform included), so the
-      // padded transform is (re)installed per frame in draw() — see setInset.
-      setInset(p, iw * cellW, ih * cellH);
       renderChrome(p);
       scheduleDraw(p);
     }
@@ -1411,50 +1774,216 @@
       gmark.title = globalTodos === 1 ? "1 unfinished global todo" : globalTodos + " unfinished global todos";
       wsGlobalTodoEl.appendChild(gmark);
     }
-    for (const w of msg.workspaces) {
-      const li = document.createElement("li");
-      li.className = "ws" + (w.active ? " active" : "") + (w.locked ? " locked" : "");
-      const name = document.createElement("span");
-      name.textContent = (w.active ? "● " : "○ ") + w.name;
-      li.appendChild(name);
-      // The lock rides closest to the name, ahead of the todo mark: it qualifies
-      // the workspace itself — what may be started in it — where the todo mark
-      // reports on the project inside.
-      if (w.locked) li.appendChild(lockMark());
-      // The todo mark sits with the name — it says something about the project,
-      // not about a pane — while the agent counts stay pinned to the right edge.
-      const todo = todoMark(todos.get(w.id) || 0);
-      if (todo) li.appendChild(todo);
-      const sum = workspaceSummary(states.get(w.id));
-      if (sum) {
-        const s = document.createElement("span"); s.className = "sum"; s.appendChild(sum);
-        li.appendChild(s);
+    // Two shelves, in the order attention runs: the workspaces still in play,
+    // then the ones set aside. "Locked" is already the strongest statement a
+    // workspace row makes — nothing may be launched into it, and a click won't
+    // even switch to it — so it is the one split worth spending a group header
+    // on, and the one set of rows worth being able to fold out of the way once a
+    // session has collected a few. The active workspace keeps its accent inside
+    // the open shelf rather than being lifted into a shelf of its own: it is
+    // always exactly one row, and a header over a single row is noise.
+    //
+    // Each row remembers its index in the session's order, because grouping
+    // reorders the list on screen while workspace.move still speaks in gaps in
+    // the session's order — see wsDropIndex for the translation back.
+    const groups = [
+      { id: WS_OPEN, label: "open", rows: [] },
+      { id: WS_LOCKED, label: "locked", rows: [] },
+    ];
+    msg.workspaces.forEach((w, i) => groups[w.locked ? 1 : 0].rows.push({ w, idx: i }));
+    // Headers are drawn only when the split is real. With nothing locked (the
+    // common case) one shelf holds everything, and a header reading "open" over
+    // the whole list is a row that says nothing — the section stays the flat list
+    // it has always been.
+    //
+    // That used to leave the heading's ⊞/⊟ with nothing to act on, so ⊟ was a
+    // no-op exactly when the list was most likely to be long. A fold does not
+    // actually need a header to fold *into*; it needs somewhere to put the one
+    // thing the fold still has to say. So when the split is absent the pair acts
+    // on WS_ALL — the whole list at once — and the count that a shelf header
+    // would have carried rides the section heading instead:
+    //
+    //   split          WORKSPACES        ⊞ ⊟      ⊟ folds each shelf behind its
+    //                    open   2 workspaces      own header, which is on screen
+    //                    locked 5 workspaces      to unfold it again
+    //
+    //   flat, folded   WORKSPACES            7 ⊞ ⊟    the heading IS the header
+    //
+    // The count only appears while it is standing in for hidden rows: expanded,
+    // the rows are right there to be counted, and a permanent tally on a heading
+    // that already carries the global todo mark and the fold pair is clutter.
+    const drawn = groups.filter((g) => g.rows.length);
+    const split = drawn.length > 1;
+    wsGroupIDs = split ? drawn.map((g) => g.id) : [WS_ALL];
+    const flatFolded = !split && wsCollapsed.has(WS_ALL);
+    // The number alone, where a shelf header spells out "3 workspaces": the noun
+    // is already the heading this rides, and the sidebar goes down to 150px wide,
+    // where the spelled-out form wraps the heading onto two lines. The tooltip
+    // carries the words for anyone the bare digit doesn't reach.
+    const n = msg.workspaces.length;
+    wsCountEl.textContent = flatFolded ? String(n) : "";
+    wsCountEl.title = flatFolded ? n + (n === 1 ? " workspace" : " workspaces") + " — click to show them" : "";
+
+    wsRenderOrder = [];
+    wsRenderTotal = msg.workspaces.length;
+    drawn.forEach((g, gi) => {
+      if (split) wsListEl.appendChild(wsGroupEl(g, gi > 0));
+      if (split ? wsCollapsed.has(g.id) : flatFolded) return;
+      for (const ent of g.rows) {
+        const w = ent.w;
+        wsRenderOrder.push(ent.idx);
+        const li = document.createElement("li");
+        li.className = "ws" + (w.active ? " active" : "") + (w.locked ? " locked" : "");
+        const name = document.createElement("span");
+        name.textContent = (w.active ? "● " : "○ ") + w.name;
+        li.appendChild(name);
+        // The lock rides closest to the name, ahead of the todo mark: it qualifies
+        // the workspace itself — what may be started in it — where the todo mark
+        // reports on the project inside.
+        if (w.locked) li.appendChild(lockMark());
+        // The todo mark sits with the name — it says something about the project,
+        // not about a pane — while the agent counts stay pinned to the right edge.
+        const todo = todoMark(todos.get(w.id) || 0);
+        if (todo) li.appendChild(todo);
+        const sum = workspaceSummary(states.get(w.id));
+        if (sum) {
+          const s = document.createElement("span"); s.className = "sum"; s.appendChild(sum);
+          li.appendChild(s);
+        }
+        // A locked workspace does not take a click-to-switch: the lock says "leave
+        // this one alone", and the sidebar is the one place a switch happens by
+        // accident (a click meant for the row's name or its lock). The toast is not
+        // optional — a click that silently does nothing reads as a broken row — and
+        // it names the way out, since the row's own context menu holds the unlock.
+        // Deliberate ways in are left alone: the context menu, the palette and the
+        // keyboard still switch, so this narrows the accident, not the workspace.
+        li.addEventListener("dblclick", () => renameWorkspace(w));
+        li.addEventListener("contextmenu", (e) => { e.preventDefault(); openCtx(e.clientX, e.clientY, wsMenuItems(w)); });
+        // The switch rides the drag helper's own mouseup rather than a "click"
+        // listener on the row: this list is rebuilt on every agents rollup, and a
+        // row replaced between press and release never sees its click (see
+        // beginReorderDrag). Press-and-release on a row is a switch; DRAG_SLOP of
+        // travel makes it a reorder instead.
+        //
+        // itemSel picks li.ws, so the group headers between the shelves are not
+        // counted as drop positions — the gap the helper reports is an index into
+        // the drawn workspace rows alone, which is exactly what wsDropIndex maps.
+        li.addEventListener("mousedown", (e) => beginReorderDrag(e, {
+          el: li, container: wsListEl, itemSel: "li.ws", horizontal: false,
+          onDrop: (gap) => sendCmd("workspace.move", { id: w.id, index: wsDropIndex(gap) }),
+          onClick: () => {
+            if (w.active) return;
+            if (w.locked) { toast((w.name || w.id) + " is locked — unlock it to switch"); return; }
+            sendCmd("workspace.focus", { id: w.id });
+          },
+        }));
+        wsListEl.appendChild(li);
       }
-      // A locked workspace does not take a click-to-switch: the lock says "leave
-      // this one alone", and the sidebar is the one place a switch happens by
-      // accident (a click meant for the row's name or its lock). The toast is not
-      // optional — a click that silently does nothing reads as a broken row — and
-      // it names the way out, since the row's own context menu holds the unlock.
-      // Deliberate ways in are left alone: the context menu, the palette and the
-      // keyboard still switch, so this narrows the accident, not the workspace.
-      li.addEventListener("click", () => {
-        if (dragConsumedClick || w.active) return;
-        if (w.locked) { toast((w.name || w.id) + " is locked — unlock it to switch"); return; }
-        sendCmd("workspace.focus", { id: w.id });
-      });
-      li.addEventListener("dblclick", () => renameWorkspace(w));
-      li.addEventListener("contextmenu", (e) => { e.preventDefault(); openCtx(e.clientX, e.clientY, wsMenuItems(w)); });
-      li.addEventListener("mousedown", (e) => beginReorderDrag(e, {
-        el: li, container: wsListEl, itemSel: "li.ws", horizontal: false,
-        onDrop: (gap) => sendCmd("workspace.move", { id: w.id, index: gap }),
-      }));
-      wsListEl.appendChild(li);
+    });
+    // The add row goes with the list. Folding a shelf leaves it — the section is
+    // still a list of workspaces, one shelf of it just isn't showing — but folding
+    // the whole list means the section is meant to be one line, and a fold that
+    // leaves a row behind hasn't folded. The way in is still the context menu and
+    // the palette, both of which reach newWorkspace without this row.
+    if (!flatFolded) {
+      const add = document.createElement("li");
+      add.className = "add"; add.textContent = "+ workspace"; add.title = "new workspace";
+      pressActivate(add, () => newWorkspace()); // rebuilt with the rows above it
+      wsListEl.appendChild(add);
     }
-    const add = document.createElement("li");
-    add.className = "add"; add.textContent = "+ workspace"; add.title = "new workspace";
-    add.addEventListener("click", () => newWorkspace());
-    wsListEl.appendChild(add);
   }
+
+  // Where the last render put each drawn workspace row in the session's order,
+  // and how many workspaces the session holds. Module-level rather than captured
+  // per render because a mid-drag rebuild replaces every row: the drop then has
+  // to be read against the list on screen at release, not the one that armed the
+  // drag (beginReorderDrag re-queries for the same reason).
+  let wsRenderOrder = [], wsRenderTotal = 0;
+
+  // wsDropIndex turns a drop position in the drawn list into the gap
+  // workspace.move wants. The list is grouped and a shelf can be folded shut, so
+  // the Nth row on screen is not the Nth workspace in the session. For a session
+  // of w0..w3 where w1 and w2 are locked:
+  //
+  //   drawn rows   [open]  w0    w3   [locked]  w1    w2
+  //   drop gap           0    1     2         2    3     4  (beginReorderDrag)
+  //   wsRenderOrder      0    3     1         1    2     —  (indices of the rows)
+  //   sent as            0    3     1         1    2     4  (gap 4 = past the end)
+  //
+  // A gap means "insert ahead of the row drawn there", so the answer is that
+  // row's own session index; past the last drawn row it means the end of the
+  // list. Ungrouped and fully expanded, wsRenderOrder is [0,1,2,…] and this is
+  // the identity mapping the list used before it had shelves.
+  //
+  // Dropping at the foot of one shelf and at the head of the next are the same
+  // gap, and land the row wherever that next row sits in the session order —
+  // the shelves are a view, not a second ordering, so a drag cannot lock or
+  // unlock a workspace by dropping it across the divider.
+  function wsDropIndex(gap) {
+    return gap < wsRenderOrder.length ? wsRenderOrder[gap] : wsRenderTotal;
+  }
+
+  // wsGroupEl builds one shelf's header: what it holds, how many, and the caret
+  // that folds it. The count rides the header in both states for the reason
+  // paneGroupEl's rollup does — folded it stands in for the rows it hides, open
+  // it saves counting them by eye.
+  function wsGroupEl(g, sep) {
+    const collapsed = wsCollapsed.has(g.id);
+    const li = document.createElement("li");
+    li.className = "wsgrp" + (sep ? " sep" : "");
+    const name = document.createElement("span");
+    name.textContent = g.label;
+    li.appendChild(name);
+    const s = document.createElement("span");
+    s.className = "gsum";
+    s.textContent = g.rows.length + (g.rows.length === 1 ? " workspace" : " workspaces");
+    li.appendChild(s);
+    const car = document.createElement("span");
+    car.className = "car"; car.textContent = collapsed ? "▶" : "▼";
+    li.appendChild(car);
+    li.title = (collapsed ? "expand " : "collapse ") + g.label + " workspaces";
+    // On the press, like the rows it folds: this list is rebuilt on every agents
+    // rollup and every layout push, and a header replaced between press and
+    // release never sees its click.
+    pressActivate(li, () => {
+      if (collapsed) wsCollapsed.delete(g.id); else wsCollapsed.add(g.id);
+      saveWsCollapsed();
+      if (layoutMsg) renderWorkspaces(layoutMsg);
+    });
+    return li;
+  }
+
+  // The Workspaces heading's controls: the same pair, in the same right-edge
+  // position, that Usage and Panes carry. They act on whatever the last render
+  // said was foldable — the shelves when the list is split, the list itself as
+  // WS_ALL when it isn't — so ⊟ always folds something and ⊞ always has it back.
+  //
+  // Rewriting the whole set from wsGroupIDs is what keeps the two spellings apart:
+  // ⊟ over a flat list drops any stale open/locked ids, and ⊟ over a split one
+  // drops WS_ALL, so a set left over from the other shape can never fold rows
+  // behind something that isn't drawn.
+  //
+  // The count itself is the third control, and the only one that appears exactly
+  // when it does something: it is the header for a shelf that was never drawn, so
+  // it unfolds on a press the way wsGroupEl's headers do. Bound once here rather
+  // than per render — the span outlives every redraw, and pressActivate leaves a
+  // mousedown listener behind that a redraw would stack.
+  (function initWsHeadingCtl() {
+    const el = document.getElementById("ws-hctl");
+    pressActivate(wsCountEl, () => {
+      if (!wsCollapsed.has(WS_ALL)) return; // empty chip: nothing folded to open
+      wsCollapsed.delete(WS_ALL); saveWsCollapsed();
+      if (layoutMsg) renderWorkspaces(layoutMsg);
+    });
+    el.appendChild(mkBtn("⊞", "show all workspaces", "", () => {
+      wsCollapsed.clear(); saveWsCollapsed();
+      if (layoutMsg) renderWorkspaces(layoutMsg);
+    }));
+    el.appendChild(mkBtn("⊟", "hide all workspaces", "", () => {
+      wsCollapsed = new Set(wsGroupIDs); saveWsCollapsed();
+      if (layoutMsg) renderWorkspaces(layoutMsg);
+    }));
+  })();
 
   // The Panes section is the session's whole pane inventory — every workspace and
   // tab, matching the global Agents rollup below it — so its rows come from the
@@ -1538,7 +2067,10 @@
     car.className = "car"; car.textContent = collapsed ? "▶" : "▼";
     li.appendChild(car);
     li.title = (collapsed ? "expand " : "collapse ") + (wsName(g.ws) || "workspace");
-    li.addEventListener("click", () => {
+    // On the press, like the rows it folds: the header is rebuilt on the same
+    // pushes they are, and a fold that has to be clicked twice because a rollup
+    // landed mid-press reads as a stuck group.
+    pressActivate(li, () => {
       if (collapsed) paneCollapsed.delete(g.ws); else paneCollapsed.add(g.ws);
       savePaneCollapsed();
       renderPaneList();
@@ -1561,8 +2093,13 @@
     // A row can name a pane in another workspace or tab, which pane.focus cannot
     // reach (it only moves the focus flag inside the current viewport), so those
     // are revealed the way the agents list reveals its own: agent.focus.
-    li.addEventListener("click", () => {
-      if (dragConsumedClick) return;
+    //
+    // Activated on the press rather than on a click, since this list is rebuilt
+    // on every rollup and pane_title/pane_agent push (pressActivate). The swap
+    // drag below needs no suppressing here: it only begins once the pointer has
+    // travelled DRAG_SLOP, which is the same distance that stops this from
+    // firing, so a press is a reveal or a drag and never both.
+    pressActivate(li, () => {
       if (!row.visible) sendCmd("agent.focus", { pane: row.pane });
       else if (!row.focused) sendCmd("pane.focus", { pane: row.pane });
     });
@@ -1734,27 +2271,37 @@
       el.appendChild(label);
       const mark = tabMarker(attention.get(t.num));
       if (mark) el.appendChild(mark);
-      el.addEventListener("click", () => { if (!dragConsumedClick && !t.active) sendCmd("tab.focus", { num: t.num }); });
       el.addEventListener("dblclick", () => renameTab(t));
       el.addEventListener("contextmenu", (e) => { e.preventDefault(); openCtx(e.clientX, e.clientY, tabMenuItems(t, msg.tabs.length)); });
+      // Focus rides the drag helper's mouseup for the same reason the workspace
+      // rows do — the tab bar is rebuilt on every agents rollup (its attention
+      // markers derive from one), so a "click" listener loses the press that a
+      // rebuild interrupts. The early return keeps the close button from both
+      // dragging and focusing — the tab's focus now hangs off the same guard
+      // its drag does, rather than off the button's stopPropagation.
       el.addEventListener("mousedown", (e) => {
         if (e.target.classList.contains("x")) return; // the close button is not a drag handle
         beginReorderDrag(e, {
           el, container: tabbarEl, itemSel: ".tab:not(.add)", horizontal: true,
           onDrop: (gap) => sendCmd("tab.move", { num: t.num, index: gap }),
+          onClick: () => { if (!t.active) sendCmd("tab.focus", { num: t.num }); },
         });
       });
       if (msg.tabs.length > 1) {
         const x = document.createElement("span");
         x.className = "x"; x.textContent = "✕"; x.title = "close tab";
-        x.addEventListener("click", (e) => { e.stopPropagation(); sendCmd("tab.close", { num: t.num }); });
+        // On the press like everything else in this bar; the mousedown above
+        // already keeps a press here from arming the tab's drag, and the tab's
+        // own activation now hangs off that same guard rather than off this
+        // handler's propagation.
+        pressActivate(x, () => sendCmd("tab.close", { num: t.num }));
         el.appendChild(x);
       }
       tabbarEl.appendChild(el);
     }
     const add = document.createElement("div");
     add.className = "tab add"; add.textContent = "+"; add.title = "new tab";
-    add.addEventListener("click", () => sendCmd("tab.create", {}));
+    pressActivate(add, () => sendCmd("tab.create", {})); // rebuilt with the tabs beside it
     tabbarEl.appendChild(add);
     // Overflow: keep the active tab in view when the bar scrolls horizontally.
     const act = tabbarEl.querySelector(".tab.active");
@@ -1767,17 +2314,78 @@
     tabbarEl.scrollLeft += e.deltaY;
   }, { passive: false });
 
+  // ---- Sidebar activation: presses, not clicks -------------------------------
+  //
+  // Every list in this sidebar is rebuilt wholesale — renderWorkspaces,
+  // renderTabbar, renderPaneList and renderAgents each wipe their container and
+  // re-create every child — and all four run off the agents rollup, which the
+  // server broadcasts on each agent state transition. A busy session therefore
+  // repaints these lists several times a second, while a mouse press is held for
+  // ~100ms.
+  //
+  // That is a lost click. The browser dispatches "click" on the nearest common
+  // ancestor of the mousedown and mouseup targets, so when a rebuild lands
+  // mid-press the old row takes the mousedown, its replacement takes the mouseup,
+  // and the click surfaces on the <ul> — where nothing is listening. The row does
+  // nothing and the press looks ignored, most often exactly when the session is
+  // busy enough for the user to want to switch away from it.
+  //
+  //   mousedown ──► row A ──┐
+  //                          ├── rebuild ──► click lands on <ul>  (dropped)
+  //   mouseup   ──► row A' ─┘
+  //
+  // So activation hangs off the press itself: mousedown remembers where it began
+  // and a window-level mouseup — registered on the window, closing over the row's
+  // own identity — decides what it meant. Neither the listener nor the closure
+  // cares whether the element still exists, so the rebuild is irrelevant.
+  //
+  // DRAG_SLOP is what separates the two readings of a press. Under it, the press
+  // is an activation; at or over it, the rows that can be dragged read it as the
+  // start of a drag instead. One number for both so the two can never both claim
+  // the same press — which is what makes a drag's own release safe to ignore here
+  // without any suppression flag.
+  const DRAG_SLOP = 4;
+
+  // pressActivate: fn runs when a press on el is released without travelling
+  // DRAG_SLOP. For rows that also drag, pass onClick to the drag helper instead —
+  // it already tracks the same threshold.
+  //
+  // The mouseup listener unregisters itself, so no press leaves one behind (a
+  // window listener outlives the element that armed it — see the pane selection
+  // note below for what that leak cost when it was permanent).
+  function pressActivate(el, fn) {
+    el.addEventListener("mousedown", (ev) => {
+      if (ev.button !== 0) return; // right-click belongs to the context menu
+      const sx = ev.clientX, sy = ev.clientY;
+      const up = (e) => {
+        window.removeEventListener("mouseup", up);
+        if (Math.abs(e.clientX - sx) >= DRAG_SLOP || Math.abs(e.clientY - sy) >= DRAG_SLOP) return;
+        fn(e);
+      };
+      window.addEventListener("mouseup", up);
+    });
+  }
+
   // ---- Drag-reorder (WS8): tabs (horizontal) + workspaces (vertical) ----
   //
   // Same shape as beginBorderDrag: mousedown arms a potential drag with
-  // window-level move/up listeners, and only ~4px of travel makes it one — a
-  // plain press stays a click (focus). While dragging, the pointer maps to an
-  // insertion gap (0..=len, the tab.move / workspace.move convention) shown as
-  // a 2px accent bar; drop sends the move and the server's layout rebroadcast
-  // re-renders both lists (the server is the source of truth).
-  // dragConsumedClick suppresses the click that follows a completed drag so it
-  // doesn't also focus; it self-clears on the next tick.
-  let dragConsumedClick = false;
+  // window-level move/up listeners, and only DRAG_SLOP of travel makes it one —
+  // a plain press stays an activation (focus). While dragging, the pointer maps
+  // to an insertion gap (0..=len, the tab.move / workspace.move convention)
+  // shown as a 2px accent bar; drop sends the move and the server's layout
+  // rebroadcast re-renders both lists (the server is the source of truth).
+  //
+  // A press that never became a drag calls cfg.onClick from the same
+  // window-level mouseup, for the reason pressActivate exists: these rows are
+  // rebuilt under the pointer, and a "click" listener on them loses any press a
+  // rebuild interrupts. Rows that can drag take their activation here rather
+  // than through pressActivate, so a press is read exactly once.
+  //
+  // This is also what retired dragConsumedClick, the flag that used to suppress
+  // the click trailing a completed drag: with both readings measured against the
+  // one threshold, a drag's release can no longer reach an activation to
+  // suppress. Drags that end on a foreign target — beginPaneSwapDrag's drop onto
+  // a pane — act on that target directly and never went through a click either.
   function beginReorderDrag(ev, cfg) {
     if (ev.button !== 0) return;
     // A press that may become a drag must not also start a text selection: the
@@ -1792,7 +2400,7 @@
     const items = () => Array.from(cfg.container.querySelectorAll(cfg.itemSel));
     const move = (e) => {
       if (!dragging) {
-        if (Math.abs(e.clientX - sx) < 4 && Math.abs(e.clientY - sy) < 4) return;
+        if (Math.abs(e.clientX - sx) < DRAG_SLOP && Math.abs(e.clientY - sy) < DRAG_SLOP) return;
         dragging = true;
         cfg.el.classList.add("dragging");
         document.body.classList.add("grabbing");
@@ -1823,10 +2431,14 @@
       cfg.el.classList.remove("dragging");
       document.body.classList.remove("grabbing");
       if (bar) bar.remove();
-      if (dragging && gap >= 0) {
-        dragConsumedClick = true;
-        setTimeout(() => { dragConsumedClick = false; }, 0); // the click fires first, synchronously
-        cfg.onDrop(gap);
+      if (dragging) {
+        if (gap >= 0) cfg.onDrop(gap);
+      } else if (cfg.onClick) {
+        // Under DRAG_SLOP this was a plain press, so it means what a click
+        // means. Released anywhere: the pointer travelled at most DRAG_SLOP, so
+        // it is still over the row it started on, whatever the DOM did in
+        // between.
+        cfg.onClick();
       }
     };
     window.addEventListener("mousemove", move);
@@ -1855,7 +2467,7 @@
     };
     const move = (e) => {
       if (!dragging) {
-        if (Math.abs(e.clientX - sx) < 4 && Math.abs(e.clientY - sy) < 4) return;
+        if (Math.abs(e.clientX - sx) < DRAG_SLOP && Math.abs(e.clientY - sy) < DRAG_SLOP) return;
         dragging = true;
         const src = panes.get(srcId);
         if (src) src.el.classList.add("dragging");
@@ -1873,8 +2485,8 @@
       const tgt = target;
       clearTarget();
       if (dragging && tgt) {
-        dragConsumedClick = true;
-        setTimeout(() => { dragConsumedClick = false; }, 0); // the click fires first, synchronously
+        // No click to suppress: dragging means the pointer passed DRAG_SLOP,
+        // which is exactly what stops the row's pressActivate from firing.
         sendCmd("pane.swap_with", { pane: srcId, target: tgt.id });
       }
     };
@@ -1890,19 +2502,35 @@
   // re-render the label on a tick of our own.
   let usageMsg = null;
 
-  // The section's heading controls: how old the reading is, and a way to take a
-  // new one. Built here rather than in the markup so the age label lives beside
-  // the code that maintains it — and beside the button whose whole purpose is
-  // to reset it.
+  // The section's heading controls: fold or unfold every group at once, how old
+  // the reading is, and a way to take a new one. Built here rather than in the
+  // markup so the age label lives beside the code that maintains it — and beside
+  // the button whose whole purpose is to reset it.
+  //
+  // Order across the heading: the reading (how old), then the control that
+  // renews it, then the fold pair hard against the right edge. The age and its
+  // refresh belong together — the button's whole job is to reset the number
+  // beside it — so the pair that has nothing to do with either is what moves
+  // outboard rather than splitting them. That also puts the fold pair in the one
+  // place it is the same distance from every section's edge, which is what lets
+  // Usage, Workspaces and Panes each be folded without re-aiming the pointer.
+  // Like Panes', these act on the groups the last draw emitted, so a provider
+  // that stops reporting doesn't linger in the collapsed set.
   let usageAgeEl = null, usageBtnEl = null, usageBusyTimer = null;
   (function initUsageHeadingCtl() {
     const el = document.getElementById("usage-hctl");
     usageAgeEl = document.createElement("span");
     usageAgeEl.className = "hage";
     el.appendChild(usageAgeEl);
-    usageBtnEl = mkBtn("", "read the account's usage now", "", refreshUsage);
+    usageBtnEl = mkBtn("", "read the account's usage now", "uref", refreshUsage);
     usageBtnEl.appendChild(refreshMark());
     el.appendChild(usageBtnEl);
+    el.appendChild(mkBtn("⊞", "expand all usage groups", "", () => {
+      usageCollapsed.clear(); saveUsageCollapsed(); drawUsage();
+    }));
+    el.appendChild(mkBtn("⊟", "collapse all usage groups", "", () => {
+      usageCollapsed = new Set(usageGroupIDs); saveUsageCollapsed(); drawUsage();
+    }));
   })();
 
   // refreshMark: the circular arrow on the refresh control — an arc most of the
@@ -1973,18 +2601,90 @@
     return h < 24 ? "resets in " + h + "h" : "resets in " + Math.round(h / 24) + "d";
   }
 
-  // renderUsage draws the section as one subsection per group: a heading, its
-  // rows, and the caption that explains them. The server decides what the groups
-  // are, what each row is called and what the caption says, because the set of
-  // providers and the meters each one reports is the server's to know — this
-  // walks the list rather than naming anything in it.
+  // The same countdown with no sentence around it, for the folded group's chip —
+  // "3% (2hrs)" — where the percentage has already said what is being counted and
+  // only the horizon is missing. Hours carry the word because hours are the unit
+  // a 5-hour window is actually read in, and "2h" beside "3%" scans as another
+  // measurement rather than as a clock; below the hour the terse register the
+  // rest of the sidebar uses is unambiguous on its own.
+  function fmtLeft(ms) {
+    const s = Math.round(ms / 1000);
+    if (s <= 0) return "resetting";
+    if (s < 60) return s + "s";
+    const m = Math.round(s / 60);
+    if (m < 60) return m + "m";
+    const h = Math.round(m / 60);
+    if (h < 24) return h + (h === 1 ? "hr" : "hrs");
+    const d = Math.round(h / 24);
+    return d + "d";
+  }
+
+  // The chip's exact form, named once so the draw and the tick cannot drift into
+  // rendering it two different ways.
+  function fmtLeftParen(ms) { return " (" + fmtLeft(ms) + ")"; }
+
+  // How close to a rollover counts as close, when the row has not said.
+  //
+  // A row that knows its own length sends soon_secs (UsageWindow.SoonSecs) and
+  // that wins — CLAUDE's 5-hour window asks for half an hour, its weeks for two,
+  // which is the same "one working stretch left" measured against very different
+  // spans. Half an hour is the fallback because it is the tighter of the two: a
+  // row whose length is unknown is likelier to be short, and warning late on a
+  // long window is a smaller error than warning through the last day of one.
+  //
+  // Either way the countdown is keyed off resets_at, like the text it colors, so
+  // it lands on exactly the rows that have a rollover to be near. The HOST rows
+  // have no such instant and cannot reach it at all.
+  const USAGE_SOON_MS = 30 * 60 * 1000;
+
+  function usageSoonMs(w) {
+    const secs = Number(w && w.soon_secs);
+    return secs > 0 ? secs * 1000 : USAGE_SOON_MS;
+  }
+
+  // Write a countdown into its span and color it for how near the rollover is.
+  //
+  // One function for both the row and the folded chip, and for both the draw and
+  // the 10s tick, because the class has to be re-decided every time the text is:
+  // a row drawn with 35 minutes left crosses its threshold with no push behind
+  // it, and a label that only took its color at draw time would sit muted
+  // through the whole stretch it is meant to mark. The threshold rides on the
+  // element for that reason — the tick walks the DOM and has no window object to
+  // ask a second time.
+  function setUsageLeft(el, ms, soonMs, fmt) {
+    el.dataset.soon = String(soonMs);
+    el.textContent = fmt(ms);
+    // <= rather than <: a window at or past its instant (fmtUntil's "resetting")
+    // is the extreme of the same state, not a return to calm — and it stays
+    // stamped that way until the next reading brings a fresh resets_at.
+    el.classList.toggle("soon", ms <= soonMs);
+  }
+
+  // renderUsage takes a new reading: it stores the message, settles the refresh
+  // control and the age label, then draws. Folding a group re-draws WITHOUT
+  // coming through here — a click is not a reading, and running usageIdle() on
+  // one would stop the spinner on a refresh still in flight.
   function renderUsage(msg) {
     usageMsg = msg || null;
     // Any reading answers a pending refresh: the poller pushes every reading it
     // takes, so the next one to arrive IS the one the click asked for.
     usageIdle();
     renderUsageAge();
+    drawUsage();
+  }
+
+  // drawUsage paints the section as one subsection per group: a heading, its
+  // rows, and the caption that explains them. The server decides what the groups
+  // are, what each row is called and what the caption says, because the set of
+  // providers and the meters each one reports is the server's to know — this
+  // walks the list rather than naming anything in it.
+  //
+  // A folded group builds its heading and nothing else, the way renderPaneList
+  // skips a collapsed workspace's rows: the rows and the caption below them are
+  // one subsection, so the caption folds with the numbers it annotates.
+  function drawUsage() {
     usageListEl.innerHTML = "";
+    usageGroupIDs = [];
     if (usageMsg) {
       let drew = false;
       for (const g of (usageMsg.groups || [])) {
@@ -1992,15 +2692,6 @@
         // Never a bare heading: a subsection with nothing under it reads as a
         // broken section rather than as a provider with nothing to report.
         if (!wins.length && !g.note) continue;
-
-        const h = document.createElement("li");
-        // The rule tracks what was EMITTED, not the index. A group skipped by
-        // the line above would otherwise leave the next one drawing a hairline
-        // as the first thing in the section, under the heading's own border.
-        h.className = "ugrp" + (drew ? " sep" : "");
-        h.textContent = g.name || g.id || "—";
-        usageListEl.appendChild(h);
-        drew = true;
 
         // "host" is the one group the server synthesises rather than reads from
         // a provider, and the one whose percentages mean something else: a
@@ -2011,10 +2702,19 @@
         // chose them. Every other id is opaque here, and its rows take the
         // rate-limit scale.
         const host = g.id === "host";
-        for (const w of wins) {
-          const levels = host ? (HOST_LEVELS[w.name] || MEMORY_LEVELS) : USAGE_LEVELS;
-          usageListEl.appendChild(usageRow(w.name, w, levels));
-        }
+        const levelsFor = (w) => host ? (HOST_LEVELS[w.name] || MEMORY_LEVELS) : USAGE_LEVELS;
+
+        const gid = usageGroupID(g);
+        usageGroupIDs.push(gid);
+        const collapsed = usageCollapsed.has(gid);
+        // The rule tracks what was EMITTED, not the index. A group skipped by
+        // the check above would otherwise leave the next one drawing a hairline
+        // as the first thing in the section, under the heading's own border.
+        usageListEl.appendChild(usageGroupEl(g, gid, wins, levelsFor, collapsed, drew));
+        drew = true;
+        if (collapsed) continue;
+
+        for (const w of wins) usageListEl.appendChild(usageRow(w.name, w, levelsFor(w)));
 
         // The caption sits directly under the rows it is about and above the
         // next heading, so it never reads as covering the whole section — only
@@ -2036,6 +2736,141 @@
     usageListEl.appendChild(li);
   }
 
+  // What a folded group is remembered by. The id is the server's stable handle
+  // ("host", a provider key); the display name is the fallback for a server that
+  // sends one without the other, so the fold survives a re-render either way.
+  function usageGroupID(g) { return g.id || g.name || "—"; }
+
+  // usageGroupEl builds one provider's header row — the click target that folds
+  // and unfolds it, mirroring paneGroupEl.
+  //
+  // Folded, it stands in for the meters it hid by carrying ONE of them (see
+  // usageHeadline), and its hover carries all of them (usageGroupTitle). That
+  // split is the point: the fold is a request for one number, not for a digest,
+  // and the reading that was folded away is still one hover from being read.
+  // Expanded there is no summary — the rows say it better, and repeating a row
+  // in the header would only be the same number twice.
+  function usageGroupEl(g, gid, wins, levelsFor, collapsed, sep) {
+    const li = document.createElement("li");
+    li.className = "ugrp" + (sep ? " sep" : "");
+    const name = document.createElement("span");
+    name.textContent = g.name || g.id || "—";
+    li.appendChild(name);
+
+    const head = collapsed ? usageHeadline(wins) : null;
+    if (head) {
+      // Graded against the headline row's OWN scale: 82% of the disk is calm
+      // where 82% of a rate window is not, so the chip's color comes from the
+      // scale of the row it is quoting and from nothing else. A row with no
+      // denominator (claude's local estimate) has a figure instead of a
+      // percentage, and shows it — a token count is still the 5-hour answer.
+      const lv = levelsFor(head);
+      const pct = typeof head.pct === "number" ? head.pct : -1;
+      if (pct >= lv.crit) li.classList.add("crit");
+      else if (pct >= lv.high) li.classList.add("high");
+      const text = pct >= 0 ? Math.round(pct) + "%" : (head.detail || "");
+      if (text) {
+        const s = document.createElement("span");
+        s.className = "gsum";
+        s.textContent = text;
+        // A percentage of a window is half an answer: 3% spent means one thing
+        // with four hours left in the five and quite another with ten minutes,
+        // because what is left is what the rest of the afternoon has to fit
+        // into. So when the quoted row is a window with a known rollover, the
+        // chip carries both — "3% (2hrs)".
+        //
+        // Keyed off resets_at rather than off the row's name: a row that rolls
+        // over is exactly the row a horizon belongs on, and the HOST rows have
+        // no such instant (nothing resets memory but a process exiting), so
+        // they keep the bare figure without this needing to know they exist.
+        const at = head.resets_at ? Date.parse(head.resets_at) : NaN;
+        if (!Number.isNaN(at)) {
+          const left = document.createElement("span");
+          left.className = "gleft";
+          left.dataset.at = String(at); // absolute, so the tick can recompute it
+          // The chip quotes one row, so it takes that row's horizon too: folded,
+          // CLAUDE is its 5-hour window and warns on the half hour, not on the
+          // week's two.
+          setUsageLeft(left, at - Date.now(), usageSoonMs(head), fmtLeftParen);
+          s.appendChild(left);
+        }
+        // No title of its own: the chip sits inside the heading, and a tooltip
+        // here would shadow the heading's — which is the one that lists every
+        // row the fold hid.
+        li.appendChild(s);
+      }
+    }
+
+    const car = document.createElement("span");
+    car.className = "car"; car.textContent = collapsed ? "▶" : "▼";
+    li.appendChild(car);
+    li.title = usageGroupTitle(g, wins, levelsFor, collapsed);
+    li.addEventListener("click", () => {
+      if (collapsed) usageCollapsed.delete(gid); else usageCollapsed.add(gid);
+      saveUsageCollapsed();
+      drawUsage();
+    });
+    return li;
+  }
+
+  // The row a folded group speaks for.
+  //
+  // The server marks it (window.headline), because which of a provider's meters
+  // answers the group's question is knowledge about the provider: Claude's
+  // 5-hour window is what a long afternoon walks into, where its week is planned
+  // around; the host's memory is what stops a session, where its CPU is usually
+  // just the work. A front-end that picked for itself would have to enumerate
+  // providers, which is the one thing this section is built not to do.
+  //
+  // Nothing marked falls back to the worst row by percentage — what every group
+  // showed before headlines existed, and still the right answer for a provider
+  // that has not said which row matters. Rows with no denominator cannot be
+  // ranked and are skipped there; a group of only those folds with no chip at
+  // all, which is honest.
+  function usageHeadline(wins) {
+    for (const w of wins) if (w.headline) return w;
+    let peak = null;
+    for (const w of wins) {
+      if (typeof w.pct !== "number" || w.pct < 0) continue;
+      if (!peak || w.pct > peak.pct) peak = w;
+    }
+    return peak;
+  }
+
+  // The group heading's hover: every row it holds, on screen or not.
+  //
+  // Folded this is the only way to read what the fold hid, and it is what lets
+  // the chip beside it be a single chosen row rather than a compressed digest of
+  // all of them — CLAUDE folds to its 5-hour number and the hover still has the
+  // week and the per-model week; HOST folds to memory and the hover still has
+  // disk and CPU. Expanded it duplicates the rows below, and is kept anyway: a
+  // heading whose tooltip depended on fold state would be a worse thing to
+  // learn than a few repeated lines.
+  //
+  // Built at draw time, so its countdowns age until the next reading lands —
+  // two minutes at the poll's cadence, against a tooltip nobody holds open that
+  // long. The rows themselves are the ones ticked every 10s.
+  function usageGroupTitle(g, wins, levelsFor, collapsed) {
+    const lines = [];
+    for (const w of wins) {
+      const lv = levelsFor(w);
+      const pct = typeof w.pct === "number" ? w.pct : -1;
+      let line = (w.name || "—") + ": ";
+      if (pct >= 0) {
+        line += pct.toFixed(1) + "% " + lv.of + (w.detail ? " (" + w.detail + ")" : "");
+      } else {
+        line += (w.detail || "unknown") + " (counted locally — no allowance on record)";
+      }
+      const at = w.resets_at ? Date.parse(w.resets_at) : NaN;
+      if (!Number.isNaN(at)) line += " · " + fmtUntil(at - Date.now());
+      lines.push(line);
+    }
+    if (!lines.length) lines.push("nothing to report");
+    if (g.note) lines.push(g.note);
+    lines.push((collapsed ? "click to expand" : "click to collapse"));
+    return lines.join("\n");
+  }
+
   // Where a row turns yellow, then red. Each kind of row keeps its own scale
   // because the same percentage does not mean the same thing on each of them:
   //
@@ -2046,20 +2881,26 @@
   //   disk    a volume 80% full is unremarkable and stays that way for weeks;
   //           it is the last few percent that end a build mid-write, so the
   //           warning waits and the alarm sits higher than either of the above.
+  //   cpu     a machine at 80% is doing the work it was asked to do, and every
+  //           build and test run touches 100% on the way past. The scale is the
+  //           loosest of the four for that reason: it warns only where the row
+  //           has stopped describing work and started describing a queue, and
+  //           the strip under it is what actually carries the story.
   //
   // Several of the numbers happen to coincide today. The scales stay separate
   // so any of them can move without dragging the others with it.
   const USAGE_LEVELS  = { high: 75, crit: 90, of: "of the window used" };
   // The group heading says which runtime supplied these readings ("Host" or
   // "WSL VM"). Keep the tooltip boundary-neutral so WSL values are never
-  // mistaken for total Windows memory or disk.
+  // mistaken for total Windows memory, CPU, or disk.
   const MEMORY_LEVELS = { high: 80, crit: 90, of: "of server memory in use" };
   const DISK_LEVELS   = { high: 85, crit: 95, of: "of the server disk in use" };
+  const CPU_LEVELS    = { high: 90, crit: 98, of: "of the server CPU busy" };
 
   // The HOST group's rows, by the name the server gives each one. An unknown
   // name falls back to the memory scale at the call site — a new host row is far
   // likelier to be another "nothing resets this" resource than a rate window.
-  const HOST_LEVELS = { Memory: MEMORY_LEVELS, Disk: DISK_LEVELS };
+  const HOST_LEVELS = { Memory: MEMORY_LEVELS, CPU: CPU_LEVELS, Disk: DISK_LEVELS };
 
   function usageRow(name, w, levels) {
     w = w || {};
@@ -2083,7 +2924,7 @@
     if (!Number.isNaN(at)) {
       const r = document.createElement("span"); r.className = "ureset";
       r.dataset.at = String(at); // absolute: the push won't come again until the number moves
-      r.textContent = fmtUntil(at - Date.now());
+      setUsageLeft(r, at - Date.now(), usageSoonMs(w), fmtUntil);
       row.appendChild(r);
     } else if (known && w.detail) {
       // A row with both a percentage and a figure — host memory's "16.7G/24.0G"
@@ -2106,10 +2947,60 @@
     meter.appendChild(fill);
     li.appendChild(meter);
 
+    // A row the server sent a history for gets it drawn under the meter. Only
+    // the rows whose movement between polls IS the information carry one (host
+    // CPU today), so this is a capability of the row rather than of the section
+    // — nothing here knows or asks which row it is looking at.
+    if (Array.isArray(w.spark) && w.spark.length > 1) li.appendChild(usageSpark(w.spark));
+
     li.title = known
       ? name + ": " + pct.toFixed(1) + "% " + levels.of + (w.detail ? " (" + w.detail + ")" : "")
       : name + ": " + (w.detail || "unknown") + " (counted locally — no allowance on record to measure against)";
     return li;
+  }
+
+  // usageSpark draws a row's recent history as a filled line, oldest at the
+  // left. The meter above it answers "where is it now"; this answers "where has
+  // it been", which for a number that moves in seconds under a poll that fires
+  // every couple of minutes is the only honest thing a single sample could not
+  // have told you.
+  //
+  //   100% ┤       ╭─╮
+  //        │   ╭───╯ ╰──╮        ← ten minutes, one point per sample
+  //     0% ┼───╯        ╰────
+  //        oldest          now
+  //
+  // The geometry is fixed at 100×20 user units and stretched to whatever width
+  // the sidebar happens to be (preserveAspectRatio="none"), so no measurement of
+  // the DOM is needed and a resized sidebar needs no redraw. That stretch is
+  // non-uniform, which would smear a stroke — hence vector-effect, which keeps
+  // the line 1px wide however far the box is pulled. The baseline sits at 20 and
+  // the top of the plot at 1, so a sample at 100% still shows its stroke inside
+  // the box rather than clipped in half by the edge.
+  function usageSpark(samples) {
+    const n = samples.length;
+    const x = (i) => (i / (n - 1)) * 100;
+    const y = (v) => 20 - (Math.min(100, Math.max(0, Number(v) || 0)) / 100) * 19;
+    let d = "";
+    for (let i = 0; i < n; i++) d += (i ? "L" : "M") + x(i).toFixed(2) + " " + y(samples[i]).toFixed(2);
+
+    const svg = document.createElementNS(SVGNS, "svg");
+    svg.setAttribute("class", "uspark");
+    svg.setAttribute("viewBox", "0 0 100 20");
+    svg.setAttribute("preserveAspectRatio", "none");
+    const fill = document.createElementNS(SVGNS, "path");
+    fill.setAttribute("class", "sfill");
+    // Closed down to the baseline at both ends: the area is what makes the shape
+    // legible at 20px, where a bare 1px line reads as noise.
+    fill.setAttribute("d", d + "L100 20L0 20Z");
+    const line = document.createElementNS(SVGNS, "path");
+    line.setAttribute("class", "sline");
+    line.setAttribute("d", d);
+    line.setAttribute("vector-effect", "non-scaling-stroke");
+    line.setAttribute("stroke-width", "1");
+    line.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(fill); svg.appendChild(line);
+    return svg;
   }
 
   // The two labels that move on their own between pushes — the reset countdowns
@@ -2123,7 +3014,16 @@
     // figures, which are facts rather than countdowns and have no instant to
     // recompute from. [data-at] is what separates the two.
     for (const el of usageListEl.querySelectorAll(".ureset[data-at]")) {
-      el.textContent = fmtUntil(Number(el.dataset.at) - Date.now());
+      // data-soon was stamped at draw from the row's own horizon; re-reading it
+      // keeps the tick free of any knowledge of which row it is rewriting.
+      setUsageLeft(el, Number(el.dataset.at) - Date.now(), Number(el.dataset.soon), fmtUntil);
+    }
+    // The folded chip's half of the same countdown. It is only in the DOM while
+    // the group is folded, so the query is usually empty — and when it is not,
+    // this is the one number on screen for that provider, which makes it the
+    // last one that should be allowed to age.
+    for (const el of usageListEl.querySelectorAll(".gleft[data-at]")) {
+      setUsageLeft(el, Number(el.dataset.at) - Date.now(), Number(el.dataset.soon), fmtLeftParen);
     }
   }, 10000);
 
@@ -2149,8 +3049,45 @@
     }
   }, 5000);
 
+  // ---- Auto-reveal (pairs with setSidebarHidden) ----
+  // Folding the column away is meant as a temporary "get out of my way", not as
+  // a way to miss the two agent states that are actually addressed to the user:
+  // blocked (it is waiting on an answer and nothing moves until it gets one) and
+  // done-unseen (it finished while the eye was elsewhere). Either one arriving
+  // brings the sidebar back on its own.
+  //
+  // Edge-triggered against the previous rollup, per pane: an agent that is
+  // merely *still* blocked must not re-open a column the user has deliberately
+  // folded away since, so only the transition into the state counts, never the
+  // state itself. agentAttn starts null and the first rollup seeds it without
+  // firing — otherwise every already-finished-unseen agent would read as a fresh
+  // transition on page load and a hidden sidebar could never survive a reload.
+  // The map outlives a dropped socket, so a reconnect's rollup doesn't re-fire
+  // for states the user has already seen.
+  let agentAttn = null;
+  function agentAttentionSweep(items) {
+    const next = new Map();
+    let pop = null;
+    for (const it of items) {
+      const st = markerState(it);
+      next.set(it.pane, st);
+      if (!pop && agentAttn && (st === "blocked" || st === "done") && agentAttn.get(it.pane) !== st) {
+        pop = { it, st };  // first one wins; the list is already in the server's order
+      }
+    }
+    agentAttn = next;
+    if (!pop) { if (sidebarHidden()) paintSplitterAttention(); return; }
+    if (!sidebarHidden()) return;
+    setSidebarHidden(false);
+    // A column that reappears by itself is a surprise unless it says why, and
+    // the row that caused it is about to be one of several in AGENTS.
+    toast(agentLabel(pop.it.agent, pop.it.model) +
+      (pop.st === "blocked" ? " is blocked" : " finished") + " — sidebar reopened");
+  }
+
   function renderAgents(items) {
     agentItems = items || [];
+    agentAttentionSweep(agentItems);
     if (layoutMsg) { renderWorkspaces(layoutMsg); renderTabbar(layoutMsg); } // ws badges + tab markers derive from the rollup
     agentListEl.innerHTML = "";
     if (!items || !items.length) {
@@ -2198,7 +3135,11 @@
       // dimmed row the way around the refusal in WORKSPACES. Asked at click time
       // rather than read off the row's class, so a lock lifted a moment ago is
       // honoured without waiting for the row to be rebuilt.
-      li.addEventListener("click", () => {
+      //
+      // On the press (pressActivate): this list is the one most often rebuilt
+      // under the pointer, since it is rendered directly from the rollup whose
+      // arrival used to eat the click.
+      pressActivate(li, () => {
         if (wsLocked(it.workspace)) {
           toast(wsName(it.workspace) + " is locked — unlock it to reach this agent");
           return;
@@ -2409,7 +3350,7 @@
         try { clipWrite(b64decode(msg.data)).catch(() => {}); } catch (e) {}
         break;
       case "notify": handleNotify(msg); break;
-      case "title": document.title = msg.title ? ("cats · " + msg.title) : "cats"; break;
+      case "title": document.title = msg.title ? ("Cats Mux · " + msg.title) : "Cats Mux"; break;
       case "update_ready":
         updateInfo = { version: msg.version || "", command: msg.command || "" };
         gearEl.classList.add("badge");
@@ -2492,6 +3433,7 @@
     if (action === "browser") return;
     if (action !== "terminal") e.preventDefault();
     if (action === "palette") { openPalette(); return; }
+    if (action === "sidebar-toggle") { setSidebarHidden(!sidebarHidden()); return; }
     if (action === "paste") { pasteText(); return; }
     if (action === "font-increase") { setFontSize(FONT_PX + 1); return; }
     if (action === "font-decrease") { setFontSize(FONT_PX - 1); return; }
@@ -3022,7 +3964,13 @@
         head.textContent = "in " + shortHome(d.dir);
         listEl.appendChild(head);
       }
-      if (d && !d.exists) note(d.error || "not a directory", "err");
+      // A path that is not on disk yet is not a dead end: submitting the
+      // dialog offers to create it (see createWorkspace), so the error note
+      // carries the way forward alongside the problem.
+      if (d && !d.exists) {
+        note(d.error || "not a directory", "err");
+        if (!d.error || d.error.startsWith("no such directory")) note("enter offers to create this folder");
+      }
       rows.slice(0, 60).forEach((r, i) => {
         const row = document.createElement("div");
         row.className = "row" + (i === sel ? " sel" : "");
@@ -3035,7 +3983,9 @@
         listEl.appendChild(row);
       });
       if (loading && !rows.length) note("listing…");
-      else if (!rows.length && d && d.exists) note(frag ? "no match" : "no subdirectories");
+      // A fragment with no match is the other spelling of "folder that does
+      // not exist yet" — same forward path as the missing-base note above.
+      else if (!rows.length && d && d.exists) note(frag ? "no match — enter offers to create this folder" : "no subdirectories");
       if (d && d.truncated) note("first " + (d.dirs || []).length + " entries only — this directory is very large");
       const cur = listEl.querySelector(".row.sel");
       if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: "nearest" });
@@ -3208,7 +4158,34 @@
       ],
       hint: "↑↓ picks a directory · tab drills in · enter creates · esc cancels",
       submitLabel: "create",
-      onSubmit: (name, path) => sendCmd("workspace.create", { name, path }),
+      onSubmit: createWorkspace,
+    });
+  }
+
+  // createWorkspace sends workspace.create, turning its one recoverable failure
+  // into an offer: a start path that does not exist re-opens as a confirm that
+  // retries with mkdir set, so pointing a new workspace at a folder that is not
+  // there yet costs one extra Enter instead of a trip to a shell. Same two-step
+  // escalation shape as confirmRemoveWorktree — the first attempt never carries
+  // the side effect, and the server keys the offer by its "no such directory"
+  // error rather than the UI guessing at the disk from a stale picker cache.
+  function createWorkspace(name, path) {
+    sendCmdAwait("workspace.create", { name, path }, (res) => {
+      if (res.ok) return;
+      const err = res.error || "";
+      if (err.startsWith("no such directory: ")) {
+        dialogConfirm({
+          title: "create folder?",
+          message: err.slice("no such directory: ".length) +
+            " does not exist — create it and start the workspace there?",
+          confirmLabel: "create folder",
+          onConfirm: () => sendCmdAwait("workspace.create", { name, path, mkdir: true }, (r2) => {
+            if (!r2.ok) toast("new workspace: " + (r2.error || "unknown"));
+          }),
+        });
+      } else {
+        toast("new workspace: " + (err || "unknown"));
+      }
     });
   }
   function renameWorkspace(w) {
@@ -3752,6 +4729,7 @@
       { label: "new worktree", fn: openNewWorktreeDialog },
       { label: "open worktree", fn: openWorktreeOpenDialog },
       { label: "plugins", fn: openPluginsDialog },
+      { label: sidebarHidden() ? "show sidebar" : "hide sidebar", fn: () => setSidebarHidden(!sidebarHidden()) },
       { label: "settings", fn: openSettings },
       { label: "reload config", fn: () => sendCmd("server.reload_config", {}) },
       { label: "keyboard shortcuts", fn: openHelp },
@@ -3916,6 +4894,7 @@
       const left = document.createElement("div");
       left.appendChild(helpSection("global", [
         ["command palette", SHORTCUTS.paletteKeys],
+        ["hide / show the sidebar", [SHORTCUTS.sidebar]],
         ["paste", [SHORTCUTS.paste]],
         ["bigger / smaller font", [SHORTCUTS.fontIncrease, SHORTCUTS.fontDecrease]],
         ["reset font size", [SHORTCUTS.fontReset]],
@@ -3925,6 +4904,7 @@
         ["move through directories", ["↑", "↓", "Ctrl+n", "Ctrl+p"]],
         ["complete, then list inside it", ["Tab", "click"]],
         ["create in the highlighted one", ["Enter"]],
+        ["make a folder that doesn't exist yet", ["type its path, Enter, confirm"]],
         ["include dotted directories", ["type a leading ."]],
       ]));
       left.appendChild(helpSection("mouse", [
@@ -3933,6 +4913,8 @@
         ["rectangular selection", ["Alt+drag"]],
         ["pane / tab / workspace menu", ["right-click"]],
         ["resize splits", ["drag the border"]],
+        ["hide the sidebar", ["drag its gutter to the left edge"]],
+        ["show it again", ["click the handle at the left edge"]],
         ["swap panes", ["drag a pane header or sidebar row onto a pane"]],
         ["reorder tabs / workspaces", ["drag"]],
         ["rename pane / tab / workspace", ["double-click its title"]],
@@ -4353,6 +5335,10 @@
       const sbw = parseInt(document.documentElement.style.getPropertyValue("--sidebar-w"), 10);
       if (sbw > 0) setSidebarWidth(sbw);
       gridSize();
+      // Same reason as the fold: the window has already been repainted at its
+      // new size, and the panes are still wearing the old one until the server
+      // answers. Dragging a window edge is the case where that lasts longest.
+      refitLayout();
       sendMsg({ t: "resize", cols, rows });
       // (No status refresh here any more — the window grid size is reported by
       // the pane hover card, which reads cols/rows live when it opens.)
@@ -4401,12 +5387,82 @@
   // Panes are laid out from cols/rows, so a drag has to re-derive the grid and
   // tell the server. That is debounced while the pointer moves (the same 120ms
   // the window resize uses) and flushed once on release.
+  // refitLayout runs on the same beat as gridSize, not only on the flush: the
+  // panes have to follow the gutter live while it is being dragged, exactly as
+  // they follow the fold. It reads the layout the server last sent, so it is
+  // cheap enough to run per debounce tick.
   let sbwTimer = null;
   function sidebarResized(now) {
     clearTimeout(sbwTimer);
-    const fire = () => { gridSize(); sendMsg({ t: "resize", cols, rows }); };
+    const fire = () => { gridSize(); refitLayout(); sendMsg({ t: "resize", cols, rows }); };
     if (now) fire(); else sbwTimer = setTimeout(fire, 120);
   }
+  // ---- Folding the sidebar away ----
+  // Hidden/shown is a per-browser display preference like the width above and
+  // the chat panel below, so it lives in localStorage, not in the
+  // server-persisted session. The stored *width* is deliberately left alone
+  // while folded: revealing has to land back on the column the user last sized,
+  // not on the stylesheet default.
+  const SBH_KEY = "cats.sidebar_hidden";
+  // Dragging the gutter this far left of the column's 150px floor folds it
+  // outright — the fold happens live, under the pointer, and dragging back past
+  // the same mark brings the column straight back. Done as a preview rather than
+  // as a decision taken on release, the gesture explains itself: the column you
+  // dragged into nothing is the column that stays gone.
+  const SBW_FOLD = Math.round(SBW_MIN * 0.55);
+  function sidebarHidden() { return document.body.classList.contains("sb-hidden"); }
+  function setSidebarHidden(hide) {
+    if (hide === sidebarHidden()) return;
+    document.body.classList.toggle("sb-hidden", hide);
+    try {
+      if (hide) localStorage.setItem(SBH_KEY, "1"); else localStorage.removeItem(SBH_KEY);
+    } catch (e) { /* not persisted */ }
+    if (hide) paintSplitterAttention();
+    else splitterEl.classList.remove("attn-blocked", "attn-done");
+    syncSplitterTitle();
+    // Folding changes #main's width exactly as a drag does, so the pane grid has
+    // to be re-derived and the server told. At once, not debounced: this is one
+    // discrete step, not a stream of pointer moves.
+    sidebarResized(true);
+  }
+  function syncSplitterTitle() {
+    splitterEl.title = sidebarHidden()
+      ? "click to show the sidebar (⌘B / Ctrl+Alt+B)"
+      : "drag to resize the sidebar (double-click to reset, ⌘B to hide)";
+  }
+  // The strongest attention state among the agents, painted onto the folded
+  // gutter. Only the top two tiers of attentionRank earn a mark: "working" is
+  // the ordinary case and would leave the gutter permanently lit, which would
+  // make the two states that are actually addressed to the user invisible again.
+  function paintSplitterAttention() {
+    let best = "";
+    for (const it of agentItems) {
+      const st = markerState(it);
+      if (st === "blocked") { best = "blocked"; break; }
+      if (st === "done") best = "done";
+    }
+    splitterEl.classList.toggle("attn-blocked", best === "blocked");
+    splitterEl.classList.toggle("attn-done", best === "done");
+  }
+  try { if (localStorage.getItem(SBH_KEY)) document.body.classList.add("sb-hidden"); } catch (e) { /* shown */ }
+  syncSplitterTitle();
+
+  // The fold button in the brand row. One direction only — it lives *in* the
+  // column, so it is gone the moment it has acted, and the reveal handle in the
+  // gutter is what comes back. mousedown is swallowed so the press cannot also
+  // read as the start of a gesture on anything behind it, the same guard the
+  // pane-chrome buttons use (mkBtn).
+  const sbFoldEl = document.getElementById("sb-fold");
+  sbFoldEl.addEventListener("mousedown", (e) => e.stopPropagation());
+  sbFoldEl.addEventListener("click", (e) => {
+    e.stopPropagation(); e.preventDefault();
+    setSidebarHidden(true);
+  });
+
+  // A click that only revealed the column must not have its second half land on
+  // the width-reset below: the pair would read as one gesture that both restored
+  // and re-defaulted the sidebar.
+  let revealedAt = 0;
   splitterEl.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -4416,11 +5472,23 @@
     // Where in the gutter it was grabbed, so the splitter stays under the
     // cursor instead of jumping its own width on the first move.
     const grabDx = e.clientX - splitterEl.getBoundingClientRect().left;
-    const move = (ev) => { setSidebarWidth(ev.clientX - grabDx); sidebarResized(false); };
+    const startHidden = sidebarHidden(), startX = e.clientX;
+    let moved = false;
+    const move = (ev) => {
+      if (Math.abs(ev.clientX - startX) > 3) moved = true;
+      const want = ev.clientX - grabDx;
+      if (want < SBW_FOLD) { setSidebarHidden(true); return; }
+      setSidebarHidden(false);      // dragged back out of the fold zone
+      setSidebarWidth(want);
+      sidebarResized(false);
+    };
     const up = () => {
       splitterEl.removeEventListener("pointermove", move);
       splitterEl.classList.remove("drag");
       document.body.classList.remove("splitting");
+      // A press on the folded gutter that never became a drag is a click, and
+      // the only thing a click there can mean is "show it again".
+      if (startHidden && !moved) { setSidebarHidden(false); revealedAt = Date.now(); }
       sidebarResized(true);
     };
     splitterEl.addEventListener("pointermove", move);
@@ -4429,6 +5497,7 @@
   });
   // Double-click hands the column back to the stylesheet's --sb-scale default.
   splitterEl.addEventListener("dblclick", () => {
+    if (Date.now() - revealedAt < 600) return;   // this was the reveal click, twice
     document.documentElement.style.removeProperty("--sidebar-w");
     try { localStorage.removeItem(SBW_KEY); } catch (e) { /* nothing to clear */ }
     sidebarResized(true);
