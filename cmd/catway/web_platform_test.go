@@ -33,6 +33,7 @@ func TestPhase5PageContracts(t *testing.T) {
 		"window.openHelp = openHelp",
 		"CatsPlatform.clipboardRead",
 		"CatsPlatform.clipboardWrite",
+		"CatsPlatform.pasteTargetOwnsEvent",
 		`case "clipboard"`, // OSC 52 uses the shared clipWrite path.
 		"readAndCopy",      // selection/copy mode uses the shared clipWrite path.
 		"copyScrollback",

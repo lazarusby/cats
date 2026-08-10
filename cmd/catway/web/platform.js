@@ -101,6 +101,15 @@
     return Promise.resolve().then(() => clipboard.readText());
   }
 
+  // pasteTargetOwnsEvent keeps the document-level terminal paste fallback out
+  // of browser-editable controls. isContentEditable includes descendants of a
+  // contenteditable host; tagName covers ordinary modal/chat form controls.
+  function pasteTargetOwnsEvent(target) {
+    if (!target || typeof target !== "object") return false;
+    const tag = String(target.tagName || "").toLowerCase();
+    return tag === "input" || tag === "textarea" || target.isContentEditable === true;
+  }
+
   function notificationPlan(input) {
     const agent = input && (input.kind === "attention" || input.kind === "finished");
     if (!agent) return Object.freeze({ suppress: false, toast: true, native: false });
@@ -158,6 +167,7 @@
     keyboardAction,
     clipboardWrite,
     clipboardRead,
+    pasteTargetOwnsEvent,
     notificationPlan,
     boundedNotification,
     safeExternalURL,

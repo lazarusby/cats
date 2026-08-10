@@ -211,6 +211,30 @@ async function main() {
     await poll(() => cdp.eval(`[...document.querySelectorAll(".toast")].some(x => x.textContent.includes("paste blocked"))`),
       1000, "clipboard bridge failure toast");
 
+    // Reproduce the plugin Add prompt's bubbling paste path. The modal input
+    // must retain the event; the document fallback must neither cancel it nor
+    // emit terminal input. Synthetic paste has no browser default insertion,
+    // so acceptance + absence of a paste message are the routing assertions.
+    await cdp.eval(`document.querySelector("#pluginsbtn").click()`);
+    const pluginListID = await poll(async () => cdp.eval(
+      `(__catsTest.sent.find(x => x.t==="cmd" && x.name==="plugin.list")||{}).id||""`),
+      1000, "plugin list command");
+    await cdp.eval(`__catsTest.message({t:"cmd_result",id:${JSON.stringify(pluginListID)},ok:true,
+      data:{catctl:"/usr/bin/catctl",plugins:[]}})`);
+    await poll(() => cdp.eval(`[...document.querySelectorAll("#overlay button")].some(x=>x.textContent.startsWith("add"))`),
+      1000, "plugin add button");
+    const modalPaste = await cdp.eval(`(() => {
+      [...document.querySelectorAll("#overlay button")].find(x=>x.textContent.startsWith("add")).click();
+      const input=document.querySelector("#overlay input");
+      input.focus(); __catsTest.sent=[];
+      const data=new DataTransfer(); data.setData("text/plain","owner/repo");
+      const event=new ClipboardEvent("paste",{bubbles:true,cancelable:true,clipboardData:data});
+      return {accepted:input.dispatchEvent(event),focused:document.activeElement===input,
+        terminalPastes:__catsTest.sent.filter(x=>x.t==="paste").length};
+    })()`);
+    assert.deepEqual(modalPaste, { accepted: true, focused: true, terminalPastes: 0 });
+    await cdp.eval(`__catsTest.key({code:"Escape",key:"Escape"})`);
+
     await cdp.eval(`__catsTest.message({t:"clipboard",data:btoa("osc52")})`);
     await poll(() => cdp.eval(`__catsTest.clipWrites.includes("osc52")`), 1000, "OSC52 native clipboard write");
 

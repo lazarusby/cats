@@ -89,6 +89,14 @@ test("clipboard prefers native bridges, falls back in browsers, and surfaces fai
   await assert.rejects(platform.clipboardRead({}), /unavailable/);
 });
 
+test("editable controls own paste events instead of the terminal fallback", () => {
+  assert.equal(platform.pasteTargetOwnsEvent({ tagName: "INPUT" }), true);
+  assert.equal(platform.pasteTargetOwnsEvent({ tagName: "textarea" }), true);
+  assert.equal(platform.pasteTargetOwnsEvent({ tagName: "SPAN", isContentEditable: true }), true);
+  assert.equal(platform.pasteTargetOwnsEvent({ tagName: "CANVAS" }), false);
+  assert.equal(platform.pasteTargetOwnsEvent(null), false);
+});
+
 test("notification plan covers permission fallback and visible/hidden panes", () => {
   assert.deepEqual(platform.notificationPlan({ kind: "attention", visible: true, focused: true }), {
     suppress: true, toast: false, native: false,

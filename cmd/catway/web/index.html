@@ -2538,7 +2538,10 @@
   // clipboard-read/paste-message path as the page's button and shortcut.
   window.pasteText = pasteText;
   document.addEventListener("paste", (e) => {
-    if (chatEl.contains(e.target)) return; // a paste into the composer stays local
+    // Inputs (including every modal prompt), textareas, and contenteditable
+    // regions keep native browser paste. Everything else is the terminal
+    // surface, where the document fallback forwards the clipboard payload.
+    if (CatsPlatform.pasteTargetOwnsEvent(e.target)) return;
     const text = (e.clipboardData || window.clipboardData).getData("text");
     if (text) { e.preventDefault(); sendMsg({ t: "paste", data: text }); }
   });
