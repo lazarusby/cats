@@ -139,3 +139,53 @@ Additional non-conflicting integration:
    and installed-Edge coverage appropriate to the changed files.
 7. Append a new `S-NNN` entry and update the implementation, bugfix, and
    decision logs before committing and pushing.
+
+## S-002 — Synchronize canonical `main` through `322117a`
+
+- Date: 2026-08-10
+- Local starting tip: `55e9509`
+- Previously incorporated canonical tip: `5b92a5f`
+- Incoming canonical tip: `322117a0550f013941161a5dbbf037ebf13adc3c`
+- Starting divergence: 12 commits unique to `wsl-ver`; one commit unique to
+  `upstream/main`.
+- Fork status: `origin/main` had zero unique commits and was 31 commits behind
+  `upstream/main`.
+
+### Incoming commit
+
+- `322117a` — `style(brand): the mark, squashed shorter and drawn with a heavier
+  line`.
+- Scope: one file, `cmd/catway/web/index.html`; 64 insertions and 12 deletions.
+- Behavior: changes the sidebar mark from 19×19 to 19×16 CSS pixels, deliberately
+  stretches the SVG with `preserveAspectRatio="none"`, adds a 2.4-unit inherited
+  stroke with round joins/caps, removes the old baseline nudge, permits safe
+  overflow, and documents the geometry derivation.
+
+### Compatibility audit and merge
+
+- `git merge-tree --write-tree HEAD upstream/main` completed with no conflict.
+- The real `git merge --no-ff --no-commit upstream/main` also completed with no
+  conflict and staged exactly the one upstream HTML file.
+- The patch contains no launcher code, WSL helper/lifecycle behavior, native
+  clipboard or menu binding, keyboard action, WebSocket/control protocol,
+  persistence, release packaging, CI, or documentation-build change.
+- Accepted the visual patch intact under D-063. No platform-specific adaptation
+  was necessary, and the prior editable-paste and sidebar-shortcut integrations
+  remain in the surrounding merged page.
+- No new bugfix entry was added: this was a style refinement, and the sync found
+  no bug with a root cause and corrective fix to record.
+
+### Verification
+
+- Conflict markers: none.
+- `git diff --cached --check`: passed before log updates.
+- `node --test cmd/catway/web/platform.test.cjs`: 10/10 passed.
+- Native Windows `go test -count=1 ./cmd/catway`: passed.
+- `node scripts/test-webui-edge.mjs`: installed-Edge regression passed,
+  including the Plugins → Add editable paste path.
+
+### Result
+
+- Pending merge commit creation after this entry is staged. The immutable merge
+  identity and final ancestry/count checks will be appended in a follow-up log
+  commit, following the S-001 pattern.

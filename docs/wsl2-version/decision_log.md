@@ -1082,6 +1082,26 @@ choice. Superseded decisions remain in the log with a link to their replacement.
 - Evidence: The merged workflow contains all prior platform jobs plus `docs`;
   the navigation lists every WSL2/Windows document.
 
+## D-063 — Preserve platform-neutral upstream visual patches intact
+
+- Date: 2026-08-10
+- Status: Accepted
+- Decision: When an incremental upstream commit is confined to browser-rendered
+  HTML/CSS/SVG, has no conflict, and does not alter a Windows/WSL ownership seam,
+  merge it intact and verify the page contract, platform policy, and installed
+  Windows browser rather than rewriting it into WSL-specific code.
+- Context: Upstream `322117a` changes only the sidebar mark’s dimensions,
+  aspect-ratio behavior, stroke, overflow, and explanatory comments. The same
+  page is intentionally shared by macOS, ordinary browsers, and WebView2.
+- Alternatives: Fork the visual design for Windows; manually reproduce the
+  patch; reject all upstream UI changes unless they include WSL-specific tests.
+- Consequences: The WSL version stays visually synchronized without creating a
+  platform-only brand variant or needless future conflicts. Platform-boundary
+  changes still require composed conflict resolution under D-059.
+- Evidence: Both merge dry run and real merge were conflict-free; the resulting
+  page passed all 10 platform-policy tests, focused `cmd/catway` tests, and the
+  installed-Edge regression.
+
 ## Open and recently closed decisions
 
 ### O-001 — Supported WSL distributions and glibc floor

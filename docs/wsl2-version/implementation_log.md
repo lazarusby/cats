@@ -742,3 +742,23 @@ and remaining blockers.
 - Concluded the non-rewriting integration as merge commit `40a624f` with parents
   `b6f3e90` (the complete WSL implementation) and `5b92a5f` (canonical main).
   Ancestry verification shows no canonical upstream commits remain outstanding.
+
+## 2026-08-10 — Incremental upstream sync through `322117a`
+
+- Fetched canonical `upstream/main` and confirmed exactly one commit had landed
+  since S-001: `322117a`, a sidebar mark proportion/weight refinement confined
+  to `cmd/catway/web/index.html`. The fork’s `origin/main` was 31 commits behind
+  canonical main; `wsl-ver` diverged by 12 local commits versus one incoming.
+- Dry-run and real three-way merges both completed without conflicts. Accepted
+  the upstream SVG/CSS patch intact because it is browser-rendered, contains no
+  platform branching, and does not touch the WSL lifecycle, native launcher,
+  clipboard, shortcuts, protocols, persistence, packaging, or CI seams.
+- Verified that the merged page preserves the Windows/WSL platform layer:
+  10/10 Node policy tests passed, focused `go test -count=1 ./cmd/catway`
+  passed, and the installed-Edge browser regression passed.
+- No bug was introduced, discovered, or repaired during this sync, so no new
+  bugfix-log identifier was created. The incoming commit is an intentional
+  visual style change rather than a correction with a bug/root-cause/fix chain.
+- Decision D-063 records why platform-neutral visual commits may be merged
+  intact after boundary and browser verification. Full topology, evidence, and
+  repeatable procedure are recorded as S-002 in [sync_log.md](sync_log.md).
