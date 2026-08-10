@@ -314,21 +314,39 @@ function Get-CatsShortcut {
     [pscustomobject]@{ TargetPath = $shortcut.TargetPath; Arguments = $shortcut.Arguments; WorkingDirectory = $shortcut.WorkingDirectory; IconLocation = $shortcut.IconLocation }
 }
 
+function Test-CatsShortcutDefinition {
+    param([string]$Path, [string]$TargetPath, [string]$Arguments, [string]$WorkingDirectory, [string]$IconLocation)
+    $actual = Get-CatsShortcut $Path
+    if ($null -eq $actual -or -not $actual.TargetPath) { return $false }
+    $targetMatches = [string]::Equals([IO.Path]::GetFullPath($actual.TargetPath), [IO.Path]::GetFullPath($TargetPath), [StringComparison]::OrdinalIgnoreCase)
+    $workingMatches = if ($WorkingDirectory) {
+        [string]::Equals([IO.Path]::GetFullPath($actual.WorkingDirectory), [IO.Path]::GetFullPath($WorkingDirectory), [StringComparison]::OrdinalIgnoreCase)
+    } else { -not [string]$actual.WorkingDirectory }
+    $argumentsMatch = [string]::Equals([string]$actual.Arguments, [string]$Arguments, [StringComparison]::Ordinal)
+    $iconMatches = [string]::Equals([string]$actual.IconLocation, [string]$IconLocation, [StringComparison]::OrdinalIgnoreCase)
+    return $targetMatches -and $workingMatches -and $argumentsMatch -and $iconMatches
+}
+
 function Set-CatsShortcut {
     param([string]$Path, [string]$TargetPath, [string]$Arguments = '', [string]$WorkingDirectory = '', [string]$IconLocation = '')
     [IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null
-    $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut($Path)
-    $shortcut.TargetPath = $TargetPath
-    $shortcut.Arguments = $Arguments
-    $shortcut.WorkingDirectory = $WorkingDirectory
-    $shortcut.IconLocation = $IconLocation
-    $shortcut.Save()
+    for ($attempt = 1; $attempt -le 2; $attempt++) {
+        if ($attempt -gt 1) { Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue }
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($Path)
+        $shortcut.TargetPath = $TargetPath
+        $shortcut.Arguments = $Arguments
+        $shortcut.WorkingDirectory = $WorkingDirectory
+        $shortcut.IconLocation = $IconLocation
+        $shortcut.Save()
+        if (Test-CatsShortcutDefinition $Path $TargetPath $Arguments $WorkingDirectory $IconLocation) { return }
+    }
+    throw "shortcut did not retain its target and launch properties: $Path"
 }
 
 function Restore-CatsShortcut {
     param([string]$Path, $Previous)
-    if ($null -eq $Previous) { Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue; return }
+    if ($null -eq $Previous -or -not $Previous.TargetPath) { Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue; return }
     Set-CatsShortcut $Path $Previous.TargetPath $Previous.Arguments $Previous.WorkingDirectory $Previous.IconLocation
 }
 

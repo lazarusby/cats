@@ -765,3 +765,26 @@ and remaining blockers.
 - Concluded the integration as merge commit `506f11e` with parents `55e9509`
   (the previously published WSL sync) and `322117a` (the new canonical commit).
   Both lines are ancestors and no canonical commits remain outstanding.
+
+## 2026-08-10 — Rebuild, distribution, installation, and shortcut verification
+
+- Built all four WSL/amd64 executables at `3a3f1e6` inside Ubuntu WSL2 and
+  assembled the matching Ubuntu 24.04 payload. Built native Windows/amd64
+  `Cats.exe` with the UCRT64/WebView2 toolchain and assembled the schema-2
+  coupled distribution. No code-signing certificate was available, so this was
+  correctly marked as an unsigned development package.
+- The release-package validator passed outer and nested layout, checksums,
+  source/compatibility identity, architecture/distro mapping, and signing-state
+  checks. Copied the validated launcher to `bin/Cats.exe`.
+- Installed the coupled package transactionally for `Ubuntu/bylaz` with
+  `-DesktopShortcut -NoLaunch`; payload staging, helper health, atomic current
+  link, launcher/backend smoke, command links, and commit all succeeded.
+- The final shortcut readback then exposed B-008: both installed `.lnk` files
+  existed but returned an empty target. A disposable control shortcut to the
+  same executable round-tripped correctly, isolating the missing installer
+  verification rather than a path or executable incompatibility.
+- Added verified shortcut serialization with a bounded fresh-file retry and
+  expanded the isolated real installer test to assert both shortcuts’ complete
+  launch definitions. Decision D-064 records the transactional rule. The build
+  must be repeated after this fix so final artifacts identify the corrected
+  source commit.

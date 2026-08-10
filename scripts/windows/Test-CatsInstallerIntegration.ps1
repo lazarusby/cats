@@ -36,9 +36,19 @@ function Remove-IsolatedRoots {
 $success = New-IsolatedRoots
 try {
     $installed = Invoke-CatsInstall -PackageRoot $PackageRoot -Distribution $Distribution -User $User `
-        -NoLaunch -SkipPrerequisiteCheck -PayloadRootOverride $success.Payload `
+        -DesktopShortcut -NoLaunch -SkipPrerequisiteCheck -PayloadRootOverride $success.Payload `
         -LocalAppDataOverride $success.Local -StartMenuOverride $success.Start -DesktopOverride $success.Desktop
     if (-not (Test-Path -LiteralPath (Join-Path $installed.WindowsPath 'Cats.exe'))) { throw 'isolated launcher was not installed' }
+    $expectedLauncher = Join-Path $installed.WindowsPath 'Cats.exe'
+    $shell = New-Object -ComObject WScript.Shell
+    foreach ($shortcutPath in @((Join-Path $success.Start 'Programs\Cats.lnk'), (Join-Path $success.Desktop 'Cats.lnk'))) {
+        if (-not (Test-Path -LiteralPath $shortcutPath -PathType Leaf)) { throw "managed shortcut was not created: $shortcutPath" }
+        $shortcut = $shell.CreateShortcut($shortcutPath)
+        if ($shortcut.TargetPath -ne $expectedLauncher -or $shortcut.Arguments -ne '' -or
+            $shortcut.WorkingDirectory -ne $installed.WindowsPath -or $shortcut.IconLocation -ne "$expectedLauncher,0") {
+            throw "managed shortcut did not retain its launch properties: $shortcutPath"
+        }
+    }
     foreach ($name in @('catway', 'cathost', 'catctl')) {
         $link = "$($success.WSLBase)/.local/bin/$name"
         $expected = "$($success.Payload)/current/$name"

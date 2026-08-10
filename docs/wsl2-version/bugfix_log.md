@@ -109,3 +109,22 @@ choices belong in [decision_log.md](decision_log.md).
   next authoritative server layout without compounding estimates.
 - Regression evidence: Upstream measured complete pane-area coverage across
   fold/reveal and both split orientations; the merged WSL page keeps that logic.
+
+## B-008 — Installed Windows shortcuts could have no resolvable target
+
+- Date: 2026-08-10
+- Bug: The production installer reported success and created `Cats.lnk` files,
+  but Windows shortcut APIs returned an empty target for both the Start-menu and
+  requested desktop shortcut, so the desktop launch acceptance check failed.
+- Root cause: `Set-CatsShortcut` treated `WScript.Shell.Save()` as proof of a
+  valid link and never read the saved file back. The installer integration test
+  did not request a desktop shortcut or inspect either shortcut’s launch
+  properties, allowing a structurally present but unresolved `.lnk` through.
+- Fix: Read back and compare target, arguments, working directory, and icon
+  after every save. If the first serialization is invalid, remove the exact link
+  and retry once from a fresh file; if the retry is invalid, fail the install so
+  its existing rollback restores the previous state. Treat a previously
+  unresolved link as absent during rollback rather than trying to recreate it.
+- Regression coverage: The isolated real Windows/WSL installer transaction now
+  requests `-DesktopShortcut` and verifies both Start-menu and desktop links
+  point to the installed versioned `Cats.exe` with the exact launch properties.

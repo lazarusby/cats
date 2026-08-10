@@ -1102,6 +1102,27 @@ choice. Superseded decisions remain in the log with a link to their replacement.
   page passed all 10 platform-policy tests, focused `cmd/catway` tests, and the
   installed-Edge regression.
 
+## D-064 — Shortcut creation is part of the install transaction
+
+- Date: 2026-08-10
+- Status: Accepted
+- Decision: A Windows shortcut is committed only after a fresh readback matches
+  its target, arguments, working directory, and icon. Retry one failed save from
+  a removed/fresh `.lnk`; fail and roll back if the second result is invalid.
+- Context: The real `3a3f1e6` install produced nonempty Start-menu and desktop
+  `.lnk` files whose embedded strings mentioned the versioned executable, but
+  both WScript and Shell APIs resolved their target as empty. `Save()` did not
+  signal an error, and existing integration checked only executable payloads
+  and WSL command links.
+- Alternatives: Accept file existence as success; repair only the current
+  desktop link manually; launch the shortcut as verification and leave a GUI
+  process running; retry without a bound.
+- Consequences: Install cannot report success with an unusable launcher link.
+  A transient shell serialization failure gets one safe recovery attempt, a
+  persistent failure uses existing transactional rollback, and tests cover both
+  managed shortcut locations without opening the GUI.
+- Evidence: B-008 and the expanded isolated installer transaction.
+
 ## Open and recently closed decisions
 
 ### O-001 — Supported WSL distributions and glibc floor
