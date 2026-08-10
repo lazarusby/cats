@@ -762,3 +762,6 @@ and remaining blockers.
 - Decision D-063 records why platform-neutral visual commits may be merged
   intact after boundary and browser verification. Full topology, evidence, and
   repeatable procedure are recorded as S-002 in [sync_log.md](sync_log.md).
+- Concluded the integration as merge commit `506f11e` with parents `55e9509`
+  (the previously published WSL sync) and `322117a` (the new canonical commit).
+  Both lines are ancestors and no canonical commits remain outstanding.

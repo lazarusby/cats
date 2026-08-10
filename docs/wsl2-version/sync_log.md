@@ -186,6 +186,14 @@ Additional non-conflicting integration:
 
 ### Result
 
-- Pending merge commit creation after this entry is staged. The immutable merge
-  identity and final ancestry/count checks will be appended in a follow-up log
-  commit, following the S-001 pattern.
+- Merge commit: `506f11efd93303dd1e61071215221f8eaf3ee796`.
+- Parents: prior synchronized WSL tip
+  `55e9509ab297ff595650aab1b7141557bcdef045` and canonical upstream tip
+  `322117a0550f013941161a5dbbf037ebf13adc3c`.
+- Post-merge divergence against `upstream/main`: 13 commits unique to the
+  merged WSL branch, zero upstream commits remaining to incorporate.
+- Git ancestry checks confirmed both `upstream/main` and the previously
+  published `origin/wsl-ver` are ancestors of the merge commit.
+- The exact project scratch directory used for Go caches and browser test files
+  was removed after verification; it is not recoverable and the merge worktree
+  was clean.
