@@ -1109,12 +1109,18 @@ choice. Superseded decisions remain in the log with a link to their replacement.
 - Decision: Publish Windows shortcuts only after the installed launcher/backend
   smoke succeeds. Commit a shortcut only after a fresh readback matches its
   target, arguments, working directory, and icon; retry one failed save from a
-  removed/fresh `.lnk` and roll back if the second result is invalid.
+  removed/fresh `.lnk` and roll back if the second result is invalid. Signed
+  releases target `Cats.exe` directly. For explicitly unsigned development
+  packages, target signed `%SystemRoot%\explorer.exe` and pass the quoted,
+  versioned `Cats.exe` path as its sole argument while retaining the CATS icon
+  and working directory.
 - Context: The real `3a3f1e6` install produced nonempty Start-menu and desktop
   `.lnk` files whose embedded strings mentioned the versioned executable, but
   both WScript and Shell APIs resolved their target as empty. `Save()` did not
-  signal an error, and existing integration checked only executable payloads
-  and WSL command links.
+  signal an error. Direct unsigned CATS targets persisted in disposable `%TEMP%`
+  paths, while signed Notepad and Explorer targets persisted on the real
+  Desktop, isolating the behavior to managed shell policy. Existing integration
+  checked only executable payloads and WSL command links.
 - Alternatives: Accept file existence as success; repair only the current
   desktop link manually; launch the shortcut as verification and leave a GUI
   process running; retry without a bound.
@@ -1122,7 +1128,9 @@ choice. Superseded decisions remain in the log with a link to their replacement.
   and the smoke cannot disturb links that have not yet been written. A transient
   serialization failure gets one safe recovery attempt, a persistent failure
   uses existing rollback, and a separate-process test covers both managed links
-  without opening the GUI.
+  without opening the GUI. Development shortcuts have Explorer as their visible
+  target, but still launch the exact installed CATS version and display its icon;
+  signed release shortcuts remain direct.
 - Evidence: B-008 and the expanded isolated installer transaction.
 
 ## Open and recently closed decisions

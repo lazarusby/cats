@@ -57,10 +57,13 @@ try {
         -LocalAppDataOverride $success.Local -StartMenuOverride $success.Start -DesktopOverride $success.Desktop
     if (-not (Test-Path -LiteralPath (Join-Path $installed.WindowsPath 'Cats.exe'))) { throw 'isolated launcher was not installed' }
     $expectedLauncher = Join-Path $installed.WindowsPath 'Cats.exe'
+    $release = Get-Content -LiteralPath (Join-Path $PackageRoot 'release.json') -Raw | ConvertFrom-Json
+    $expectedShortcutTarget = if ([bool]$release.authenticode.release_candidate_signed) { $expectedLauncher } else { Join-Path $env:SystemRoot 'explorer.exe' }
+    $expectedShortcutArguments = if ([bool]$release.authenticode.release_candidate_signed) { '' } else { '"' + $expectedLauncher + '"' }
     foreach ($shortcutPath in @((Join-Path $success.Start 'Programs\Cats.lnk'), (Join-Path $success.Desktop 'Cats.lnk'))) {
         if (-not (Test-Path -LiteralPath $shortcutPath -PathType Leaf)) { throw "managed shortcut was not created: $shortcutPath" }
         $shortcut = Get-ShortcutFromIndependentProcess $shortcutPath
-        if ($shortcut.TargetPath -ne $expectedLauncher -or $shortcut.Arguments -ne '' -or
+        if ($shortcut.TargetPath -ne $expectedShortcutTarget -or $shortcut.Arguments -ne $expectedShortcutArguments -or
             $shortcut.WorkingDirectory -ne $installed.WindowsPath -or $shortcut.IconLocation -ne "$expectedLauncher,0") {
             throw "managed shortcut did not retain its launch properties: $shortcutPath"
         }

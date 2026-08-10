@@ -794,3 +794,10 @@ and remaining blockers.
   cached COM state. Moved shortcut publication after the installed smoke and
   changed integration verification to a separate PowerShell process; another
   source commit and rebuild are required before final delivery.
+- Independent probes in the real Desktop folder then isolated the remaining
+  behavior to managed shell policy: the unsigned CATS target was removed, while
+  signed Notepad and Explorer targets retained their complete definitions.
+  Unsigned development packages now publish an Explorer trampoline with the
+  quoted, versioned CATS executable as its argument; signed packages continue to
+  use a direct target. Integration expectations derive from the package signing
+  claim and validate the full shortcut definition in a separate process.

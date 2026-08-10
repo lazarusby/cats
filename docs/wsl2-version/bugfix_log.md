@@ -116,18 +116,24 @@ choices belong in [decision_log.md](decision_log.md).
 - Bug: The production installer reported success and created `Cats.lnk` files,
   but Windows shortcut APIs returned an empty target for both the Start-menu and
   requested desktop shortcut, so the desktop launch acceptance check failed.
-- Root cause: The installer published shortcuts before running the installed
-  launcher/backend smoke. After the transaction completed, both links retained
-  their working directory and icon strings but lost the resolvable target. An
-  immediate readback in the same WScript COM process saw cached target state and
-  therefore could not prove cross-process durability. The integration test also
-  neither requested a desktop link nor inspected shortcuts independently.
+- Root cause: A managed Windows shell/security policy strips direct `.lnk`
+  targets to this unsigned development `Cats.exe` in the real Desktop and
+  Start-menu folders. The same target persists in ordinary temporary folders,
+  and signed Windows executable targets persist in the managed folders. An
+  immediate readback in the same WScript COM process also saw cached target
+  state and therefore could not prove cross-process durability. The integration
+  test originally neither requested a desktop link nor inspected shortcuts
+  independently.
 - Fix: Run the installed launcher/backend smoke before publishing shortcuts, so
   shortcut creation is the transaction’s final user-entry-point write. Read
   back and compare target, arguments, working directory, and icon after every
   save, with one bounded retry from a removed/fresh `.lnk`; fail into rollback
   if it remains invalid. Treat an unresolved previous link as absent on rollback.
+  Signed releases point directly to `Cats.exe`; unsigned development packages
+  use signed Windows Explorer as a trampoline with the quoted versioned
+  `Cats.exe` path as its argument while retaining the CATS icon and working
+  directory.
 - Regression coverage: The isolated real Windows/WSL installer transaction now
   requests `-DesktopShortcut` and verifies from a separate PowerShell process
-  that both links point to the installed versioned `Cats.exe` with the exact
-  launch properties.
+  that both links retain the package-signing-appropriate target and the exact
+  arguments, working directory, and icon.

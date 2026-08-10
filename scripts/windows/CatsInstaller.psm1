@@ -344,6 +344,30 @@ function Set-CatsShortcut {
     throw "shortcut did not retain its target and launch properties: $Path"
 }
 
+function Get-CatsShortcutLaunchDefinition {
+    param([string]$Executable, [string]$WorkingDirectory, [bool]$ReleaseCandidateSigned)
+    if ($ReleaseCandidateSigned) {
+        return [pscustomobject]@{
+            TargetPath = $Executable
+            Arguments = ''
+            WorkingDirectory = $WorkingDirectory
+            IconLocation = "$Executable,0"
+        }
+    }
+
+    # Managed Windows shell folders can strip a direct target that points to an
+    # unsigned executable. Explorer is a signed system entry point and forwards
+    # the quoted path without changing the CATS working directory or icon.
+    $explorer = Join-Path $env:SystemRoot 'explorer.exe'
+    if (-not (Test-Path -LiteralPath $explorer -PathType Leaf)) { throw 'Windows Explorer is unavailable for the unsigned-development shortcut' }
+    return [pscustomobject]@{
+        TargetPath = $explorer
+        Arguments = '"' + $Executable + '"'
+        WorkingDirectory = $WorkingDirectory
+        IconLocation = "$Executable,0"
+    }
+}
+
 function Restore-CatsShortcut {
     param([string]$Path, $Previous)
     if ($null -eq $Previous -or -not $Previous.TargetPath) { Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue; return }
@@ -507,14 +531,14 @@ function Invoke-CatsInstall {
         if ($smoke.ExitCode -ne 0) { throw "installed launcher/backend smoke check exited $($smoke.ExitCode)" }
 
         # Publish entry points only after the executable/payload pair has passed
-        # its smoke. Besides keeping a failed candidate out of the shell, this
-        # ensures the shortcut is the final write in the transaction: Windows
-        # link tracking cannot rewrite it around an executable used by the
-        # in-flight smoke before another process has ever resolved the link.
-        Set-CatsShortcut $startShortcut $executable '' $windowsRelease "$executable,0"
+        # its smoke. Unsigned development launchers are passed through signed
+        # Windows Explorer because managed shell folders can strip a direct
+        # target to an unsigned executable.
+        $shortcutLaunch = Get-CatsShortcutLaunchDefinition $executable $windowsRelease ([bool]$release.authenticode.release_candidate_signed)
+        Set-CatsShortcut $startShortcut $shortcutLaunch.TargetPath $shortcutLaunch.Arguments $shortcutLaunch.WorkingDirectory $shortcutLaunch.IconLocation
         $startShortcutChanged = $true
         if ($DesktopShortcut) {
-            Set-CatsShortcut $desktopLink $executable '' $windowsRelease "$executable,0"
+            Set-CatsShortcut $desktopLink $shortcutLaunch.TargetPath $shortcutLaunch.Arguments $shortcutLaunch.WorkingDirectory $shortcutLaunch.IconLocation
             $desktopShortcutChanged = $true
         }
 
