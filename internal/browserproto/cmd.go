@@ -35,6 +35,7 @@ const (
 	CmdWorkspaceFocus     = app.CmdWorkspaceFocus
 	CmdWorkspaceRename    = app.CmdWorkspaceRename
 	CmdWorkspaceMove      = app.CmdWorkspaceMove
+	CmdWorkspaceLock      = app.CmdWorkspaceLock
 	CmdAgentFocus         = app.CmdAgentFocus
 	CmdServerReloadConfig = app.CmdServerReloadConfig
 	CmdServerStop         = app.CmdServerStop
@@ -102,6 +103,7 @@ type (
 	WorkspaceParams       = app.WorkspaceParams
 	RenameWorkspaceParams = app.RenameWorkspaceParams
 	MoveWorkspaceParams   = app.MoveWorkspaceParams
+	LockWorkspaceParams   = app.LockWorkspaceParams
 	WorktreeListParams    = app.WorktreeListParams
 	WorktreeListResult    = app.WorktreeListResult
 	WorktreeInfo          = app.WorktreeInfo

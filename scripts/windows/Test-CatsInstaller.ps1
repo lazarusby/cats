@@ -30,6 +30,45 @@ try {
     [IO.File]::WriteAllText((Join-Path $package 'SHA256SUMS'), "$digest  ../escape.txt`n", (New-Object Text.UTF8Encoding($false)))
     Assert-Throws { Test-CatsPackageChecksums $package | Out-Null } 'traversal should fail'
 
+    $layoutRoot = Join-Path $temporary 'layout'
+    [IO.Directory]::CreateDirectory((Join-Path $layoutRoot 'licenses')) | Out-Null
+    foreach ($relative in @(
+        'Cats.exe', 'CatsInstaller.psm1', 'config.example.yaml', 'Install-Cats.ps1',
+        'NOTICE', 'release.json', 'SHA256SUMS', 'Uninstall-Cats.ps1',
+        'wsl-payload.tar.gz', 'licenses/libghostty-vt.txt',
+        'licenses/mswebview2.txt', 'licenses/webview-go.txt', 'licenses/webview.txt'
+    )) {
+        [IO.File]::WriteAllText((Join-Path $layoutRoot $relative), '', (New-Object Text.UTF8Encoding($false)))
+    }
+    Assert-True (Test-CatsPackageLayout $layoutRoot) 'exact package layout was rejected'
+    [IO.File]::WriteAllText((Join-Path $layoutRoot 'unexpected.ps1'), '', (New-Object Text.UTF8Encoding($false)))
+    Assert-Throws { Test-CatsPackageLayout $layoutRoot | Out-Null } 'unexpected package files should fail'
+
+    $payloadRootName = 'cats-wsl-payload_v1.2.3_ubuntu-24.04_linux_amd64'
+    $payloadListing = @(
+        "drwxr-xr-x user/group 0 2026-08-09 00:00 $payloadRootName/",
+        "-rw-r--r-- user/group 1 2026-08-09 00:00 $payloadRootName/NOTICE",
+        "-rw-r--r-- user/group 1 2026-08-09 00:00 $payloadRootName/SHA256SUMS",
+        "-rwxr-xr-x user/group 1 2026-08-09 00:00 $payloadRootName/catctl",
+        "-rwxr-xr-x user/group 1 2026-08-09 00:00 $payloadRootName/cathost",
+        "-rwxr-xr-x user/group 1 2026-08-09 00:00 $payloadRootName/cats-wsl-host",
+        "-rwxr-xr-x user/group 1 2026-08-09 00:00 $payloadRootName/catway",
+        "-rw-r--r-- user/group 1 2026-08-09 00:00 $payloadRootName/config.example.yaml",
+        "drwxr-xr-x user/group 0 2026-08-09 00:00 $payloadRootName/licenses/",
+        "-rw-r--r-- user/group 1 2026-08-09 00:00 $payloadRootName/licenses/libghostty-vt.txt",
+        "-rw-r--r-- user/group 1 2026-08-09 00:00 $payloadRootName/release.json"
+    )
+    & $installerModule { param($listing) Assert-CatsPayloadArchiveListing $listing 'v1.2.3' } $payloadListing
+    $symlinkListing = @($payloadListing)
+    $symlinkListing[8] = "lrwxrwxrwx user/group 0 2026-08-09 00:00 $payloadRootName/licenses/ -> /tmp/escape"
+    Assert-Throws {
+        & $installerModule { param($listing) Assert-CatsPayloadArchiveListing $listing 'v1.2.3' } $symlinkListing
+    } 'payload symlink should fail before extraction'
+    $traversalListing = @($payloadListing + "-rw-r--r-- user/group 1 2026-08-09 00:00 $payloadRootName/../escape")
+    Assert-Throws {
+        & $installerModule { param($listing) Assert-CatsPayloadArchiveListing $listing 'v1.2.3' } $traversalListing
+    } 'payload traversal should fail before extraction'
+
     & $installerModule { param($kernel) Assert-CatsWsl2Kernel $kernel } '6.18.33.2-microsoft-standard-WSL2'
     & $installerModule { param($osRelease) Assert-CatsSupportedDistribution $osRelease } "ID=ubuntu`nVERSION_ID=`"24.04`""
     Assert-Throws {
@@ -75,7 +114,7 @@ try {
     Assert-True (@($allPlan | Where-Object Kind -eq 'data').Count -eq 3) 'remove-all plan did not enumerate all CATS-owned data roots'
     Assert-Throws { Get-CatsUninstallPlan 'C:\Local' 'C:\Start' 'C:\Desktop' '/home/alice/project' | Out-Null } 'unexpected payload root should fail closed'
 
-    Write-Host 'PASS: installer checksum, config-merge, and uninstall-plan tests'
+    Write-Host 'PASS: installer checksum, archive-layout, config-merge, and uninstall-plan tests'
 }
 finally {
     Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue

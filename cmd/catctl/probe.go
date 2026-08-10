@@ -40,8 +40,10 @@
 //	rect:PANE:x|y|w|h:eq|lt|gt:N  poll until a pane rect field matches (PANE may be "f")
 //	title:PANE:TEXT         poll until a pane's title equals TEXT (PANE may be "f")
 //	tabnew                  cmd tab.create        tabfocus:NUM  cmd tab.focus
-//	tabclose[:NUM]          cmd tab.close         wsnew         cmd workspace.create
-//	wsfocus:ID              cmd workspace.focus (ID e.g. w1)
+//	tabclose[:NUM]          cmd tab.close         tabmove:NUM:INDEX cmd tab.move
+//	wsnew                   cmd workspace.create wsclose[:ID] cmd workspace.close
+//	wsfocus:ID              cmd workspace.focus  wsrename:ID:NAME cmd workspace.rename
+//	wsmove:ID:INDEX         cmd workspace.move   wslock:ID:on|off cmd workspace.lock
 //	agentfocus:PANE         cmd agent.focus — reveal+focus a pane (may cross ws/tab)
 //	reloadconfig            cmd server.reload_config (awaits ack)
 //	serverstop              cmd server.stop (awaits ack; catway then exits)
@@ -1039,6 +1041,22 @@ func (p *probe) exec(op string, timeout time.Duration) error {
 		fmt.Printf("→ cmd tab.close %s\n", arg)
 		return p.send(cmd)
 
+	case "tabmove":
+		parts := strings.Split(arg, ":")
+		if len(parts) != 2 {
+			return fmt.Errorf("tabmove needs NUM:INDEX")
+		}
+		num, err := strconv.Atoi(parts[0])
+		if err != nil {
+			return err
+		}
+		index, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return err
+		}
+		fmt.Printf("→ cmd tab.move num=%d index=%d\n", num, index)
+		return p.awaitCmd(browserproto.CmdTabMove, browserproto.MoveTabParams{Num: num, Index: index}, timeout)
+
 	case "wsnew":
 		cmd, err := browserproto.NewCmd("", browserproto.CmdWorkspaceCreate, struct{}{})
 		if err != nil {
@@ -1054,6 +1072,39 @@ func (p *probe) exec(op string, timeout time.Duration) error {
 		}
 		fmt.Printf("→ cmd workspace.focus %s\n", arg)
 		return p.send(cmd)
+
+	case "wsclose":
+		fmt.Printf("→ cmd workspace.close %s\n", arg)
+		return p.awaitCmd(browserproto.CmdWorkspaceClose, browserproto.WorkspaceParams{ID: arg}, timeout)
+
+	case "wsrename":
+		id, name, ok := strings.Cut(arg, ":")
+		if !ok || id == "" {
+			return fmt.Errorf("wsrename needs ID:NAME")
+		}
+		fmt.Printf("→ cmd workspace.rename %s %q\n", id, name)
+		return p.awaitCmd(browserproto.CmdWorkspaceRename, browserproto.RenameWorkspaceParams{ID: id, Name: name}, timeout)
+
+	case "wsmove":
+		id, rawIndex, ok := strings.Cut(arg, ":")
+		if !ok || id == "" {
+			return fmt.Errorf("wsmove needs ID:INDEX")
+		}
+		index, err := strconv.Atoi(rawIndex)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("→ cmd workspace.move %s index=%d\n", id, index)
+		return p.awaitCmd(browserproto.CmdWorkspaceMove, browserproto.MoveWorkspaceParams{ID: id, Index: index}, timeout)
+
+	case "wslock":
+		id, state, ok := strings.Cut(arg, ":")
+		if !ok || id == "" || (state != "on" && state != "off") {
+			return fmt.Errorf("wslock needs ID:on|off")
+		}
+		locked := state == "on"
+		fmt.Printf("→ cmd workspace.lock %s locked=%v\n", id, locked)
+		return p.awaitCmd(browserproto.CmdWorkspaceLock, browserproto.LockWorkspaceParams{ID: id, Locked: locked}, timeout)
 
 	case "agentfocus":
 		// agentfocus:PANE — reveal+focus a pane by id, which (unlike focus) may

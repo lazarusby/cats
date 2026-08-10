@@ -27,7 +27,9 @@ var (
 	windowsWSLUser        = flag.String("cats-wsl-user", "", "integration-test Linux user")
 	windowsWSLPayload     = flag.String("cats-wsl-payload", "", "integration-test absolute Linux payload path")
 	windowsWSLDestructive = flag.Bool("cats-wsl-destructive-integration", false,
-		"run owner-kill, wsl --terminate, and wsl --shutdown lifecycle qualification")
+		"run the isolated Windows-owner-kill lifecycle qualification")
+	windowsWSLDistributionDisruption = flag.Bool("cats-wsl-distribution-disruption-integration", false,
+		"run wsl --terminate and wsl --shutdown qualification on a dedicated idle distribution")
 )
 
 func integrationWSLTarget() wslclient.Target {
@@ -167,8 +169,8 @@ func TestWindowsLocalUsesPersistentProgressWindow(t *testing.T) {
 }
 
 func TestWindowsWSLDisruptionIntegration(t *testing.T) {
-	if !*windowsWSLDestructive {
-		t.Skip("pass -cats-wsl-destructive-integration on an idle qualified WSL host")
+	if !*windowsWSLDistributionDisruption {
+		t.Skip("pass -cats-wsl-distribution-disruption-integration on an idle dedicated WSL host")
 	}
 	target := integrationWSLTarget()
 	if err := target.Validate(); err != nil {

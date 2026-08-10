@@ -47,22 +47,39 @@ class CDP {
   }
   async open() {
     await new Promise((resolve, reject) => {
-      this.ws.addEventListener("open", resolve, { once: true });
+      const timer = setTimeout(() => reject(new Error("timed out opening Edge DevTools WebSocket")), 5000);
+      this.ws.addEventListener("open", () => { clearTimeout(timer); resolve(); }, { once: true });
       this.ws.addEventListener("error", reject, { once: true });
     });
-    this.ws.addEventListener("message", (event) => {
-      const msg = JSON.parse(event.data);
-      const pending = this.pending.get(msg.id);
-      if (!pending) return;
-      this.pending.delete(msg.id);
-      if (msg.error) pending.reject(new Error(msg.error.message));
-      else pending.resolve(msg.result);
+    this.ws.addEventListener("message", async (event) => {
+      try {
+        let raw = event.data;
+        if (raw instanceof Blob) raw = await raw.text();
+        else if (raw instanceof ArrayBuffer) raw = new TextDecoder().decode(raw);
+        const msg = JSON.parse(raw);
+        const pending = this.pending.get(msg.id);
+        if (!pending) return;
+        this.pending.delete(msg.id);
+        clearTimeout(pending.timer);
+        if (msg.error) pending.reject(new Error(msg.error.message));
+        else pending.resolve(msg.result);
+      } catch (err) {
+        for (const [id, pending] of this.pending) {
+          this.pending.delete(id);
+          clearTimeout(pending.timer);
+          pending.reject(err);
+        }
+      }
     });
   }
   send(method, params = {}) {
     const id = ++this.seq;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`timed out waiting for Edge DevTools method ${method}`));
+      }, 5000);
+      this.pending.set(id, { resolve, reject, timer });
       this.ws.send(JSON.stringify({ id, method, params }));
     });
   }
@@ -135,7 +152,7 @@ async function main() {
   const debugPort = await reservePort();
   const profile = await mkdtemp(path.join(os.tmpdir(), "cats-edge-phase5-"));
   const child = spawn(edge, [
-    "--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
+    "--headless=new", "--disable-gpu", "--no-sandbox", "--no-first-run", "--no-default-browser-check",
     `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`,
     `http://127.0.0.1:${pagePort}/phase5`,
   ], { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
@@ -145,7 +162,7 @@ async function main() {
   let cdp;
   try {
     const target = await poll(async () => {
-      const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
+      const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`, { signal: AbortSignal.timeout(1000) });
       if (!response.ok) return null;
       const pages = await response.json();
       return pages.find((item) => item.type === "page" && item.url.includes(`/phase5`));

@@ -67,6 +67,13 @@ jobs:
       - name: Native CGO WebView2 launcher
         shell: powershell
         run: .\scripts\windows\Build-WindowsLauncher.ps1 -OutputPath .\bin\Cats.exe
+      - name: Windows browser policy and Edge integration
+        shell: powershell
+        run: |
+          node --test .\cmd\catway\web\platform.test.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node .\scripts\test-webui-edge.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   linux-wsl-host-integration:
     runs-on: ubuntu-24.04

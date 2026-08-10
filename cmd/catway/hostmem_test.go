@@ -184,3 +184,22 @@ func TestHostUsageGroup(t *testing.T) {
 		}
 	}
 }
+
+func TestHostResourceScope(t *testing.T) {
+	tests := []struct {
+		name, goos, distro, release, want string
+	}{
+		{"windows host", "windows", "", "", "Host"},
+		{"ordinary linux", "linux", "", "6.8.0-generic", "Host"},
+		{"wsl environment", "linux", "Ubuntu-24.04", "6.8.0-generic", "WSL VM"},
+		{"wsl kernel", "linux", "", "6.6.87.2-microsoft-standard-WSL2", "WSL VM"},
+		{"wsl marker", "linux", "", "5.15.0-WSL2", "WSL VM"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hostResourceScope(tt.goos, tt.distro, []byte(tt.release)); got != tt.want {
+				t.Fatalf("hostResourceScope(%q, %q, %q) = %q, want %q", tt.goos, tt.distro, tt.release, got, tt.want)
+			}
+		})
+	}
+}

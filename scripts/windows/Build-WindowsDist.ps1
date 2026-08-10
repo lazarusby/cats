@@ -22,6 +22,7 @@ function Invoke-Native {
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repo 'dist' }
 [IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
+$OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 $hash = (& git -C $repo rev-parse --short HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $hash -notmatch '^[0-9a-f]{7,40}$') { throw 'could not determine release id' }
 $sourceCommit = (& git -C $repo rev-parse HEAD).Trim()

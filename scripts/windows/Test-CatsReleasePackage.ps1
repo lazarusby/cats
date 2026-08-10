@@ -23,12 +23,38 @@ $PackageArchive = (Resolve-Path -LiteralPath $PackageArchive).Path
 $temporary = Join-Path ([IO.Path]::GetTempPath()) ('cats-release-test-' + [Guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($temporary) | Out-Null
 try {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archiveRoot = [IO.Path]::GetFileNameWithoutExtension($PackageArchive)
+    $expectedEntries = @(
+        'Cats.exe', 'CatsInstaller.psm1', 'config.example.yaml',
+        'Install-Cats.ps1', 'NOTICE', 'release.json', 'SHA256SUMS',
+        'Uninstall-Cats.ps1', 'wsl-payload.tar.gz',
+        'licenses/libghostty-vt.txt', 'licenses/mswebview2.txt',
+        'licenses/webview-go.txt', 'licenses/webview.txt'
+    )
+    $zip = [IO.Compression.ZipFile]::OpenRead($PackageArchive)
+    try {
+        $seenEntries = @{}
+        foreach ($entry in $zip.Entries) {
+            $name = $entry.FullName.Replace('\', '/')
+            $prefix = "$archiveRoot/"
+            Assert-CatsRelease ($name.StartsWith($prefix, [StringComparison]::Ordinal)) "zip entry escapes its package root: $name"
+            $relative = $name.Substring($prefix.Length)
+            Assert-CatsRelease ($expectedEntries -ccontains $relative) "zip contains an unexpected entry: $relative"
+            Assert-CatsRelease (-not $seenEntries.ContainsKey($relative)) "zip contains a duplicate entry: $relative"
+            $seenEntries[$relative] = $true
+        }
+        Assert-CatsRelease ($seenEntries.Count -eq $expectedEntries.Count) 'zip is missing a required package entry'
+    }
+    finally { $zip.Dispose() }
+
     Expand-Archive -LiteralPath $PackageArchive -DestinationPath $temporary
     $roots = @(Get-ChildItem -LiteralPath $temporary -Directory)
     Assert-CatsRelease ($roots.Count -eq 1) 'release archive must contain exactly one root directory'
     $root = $roots[0].FullName
     Import-Module (Join-Path $root 'CatsInstaller.psm1') -Force
     Test-CatsPackageChecksums $root | Out-Null
+    Test-CatsPackageLayout $root | Out-Null
 
     $release = Get-Content -LiteralPath (Join-Path $root 'release.json') -Raw | ConvertFrom-Json
     Assert-CatsRelease ($release.schema -eq 2 -and $release.product -eq 'cats-windows-wsl') 'unsupported release manifest'

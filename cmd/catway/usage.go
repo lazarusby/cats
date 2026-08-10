@@ -210,7 +210,7 @@ func claudeUsageGroup(est *usageEstimator, now time.Time) browserproto.UsageGrou
 // surviving number is still worth showing. Only a group with no rows at all is
 // withheld — an empty heading reads as a broken sidebar.
 func hostUsageGroup() (browserproto.UsageGroup, bool) {
-	g := browserproto.UsageGroup{ID: "host", Name: "Host"}
+	g := browserproto.UsageGroup{ID: "host", Name: hostResourceScope(runtime.GOOS, os.Getenv("WSL_DISTRO_NAME"), readKernelRelease())}
 	if mem := hostMemory(); mem.Pct >= 0 {
 		mem.Name = "Memory"
 		g.Windows = append(g.Windows, mem)
@@ -225,6 +225,24 @@ func hostUsageGroup() (browserproto.UsageGroup, bool) {
 		return browserproto.UsageGroup{}, false
 	}
 	return g, true
+}
+
+// hostResourceScope names the operating-system boundary that supplied the
+// memory and disk readings. In WSL, /proc/meminfo and statfs describe the WSL
+// VM/distribution rather than the Windows machine. Calling that boundary just
+// "Host" makes a correct number easy to interpret incorrectly.
+func hostResourceScope(goos, distro string, kernelRelease []byte) string {
+	if goos == "linux" && (strings.TrimSpace(distro) != "" ||
+		strings.Contains(strings.ToLower(string(kernelRelease)), "microsoft") ||
+		strings.Contains(strings.ToLower(string(kernelRelease)), "wsl")) {
+		return "WSL VM"
+	}
+	return "Host"
+}
+
+func readKernelRelease() []byte {
+	raw, _ := os.ReadFile("/proc/sys/kernel/osrelease")
+	return raw
 }
 
 // --- The account read ---------------------------------------------------------

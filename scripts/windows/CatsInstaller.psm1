@@ -99,6 +99,74 @@ function Test-CatsPackageChecksums {
     return $true
 }
 
+function Test-CatsPackageLayout {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$PackageRoot)
+    $root = (Resolve-Path -LiteralPath $PackageRoot).Path
+    $expectedFiles = @(
+        'Cats.exe', 'CatsInstaller.psm1', 'config.example.yaml',
+        'Install-Cats.ps1', 'NOTICE', 'release.json', 'SHA256SUMS',
+        'Uninstall-Cats.ps1', 'wsl-payload.tar.gz',
+        'licenses/libghostty-vt.txt', 'licenses/mswebview2.txt',
+        'licenses/webview-go.txt', 'licenses/webview.txt'
+    )
+    $actualFiles = @(Get-ChildItem -LiteralPath $root -Recurse -File | ForEach-Object {
+        if (($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "package file must not be a link or reparse point: $($_.FullName)"
+        }
+        $_.FullName.Substring($root.Length + 1).Replace('\', '/')
+    } | Sort-Object)
+    $actualDirectories = @(Get-ChildItem -LiteralPath $root -Recurse -Directory | ForEach-Object {
+        if (($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "package directory must not be a link or reparse point: $($_.FullName)"
+        }
+        $_.FullName.Substring($root.Length + 1).Replace('\', '/')
+    } | Sort-Object)
+    if (($actualFiles -join "`n") -cne (($expectedFiles | Sort-Object) -join "`n")) {
+        throw "package contains missing or unexpected files: $($actualFiles -join ', ')"
+    }
+    if (($actualDirectories -join "`n") -cne 'licenses') {
+        throw "package contains missing or unexpected directories: $($actualDirectories -join ', ')"
+    }
+    return $true
+}
+
+function Assert-CatsPayloadArchiveListing {
+    param([string[]]$Listing, [string]$ReleaseId)
+    if ($ReleaseId -notmatch '^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$') { throw 'unsafe payload release id' }
+    $root = "cats-wsl-payload_${ReleaseId}_ubuntu-24.04_linux_amd64"
+    $expected = @{
+        "$root/" = 'd'
+        "$root/NOTICE" = '-'
+        "$root/SHA256SUMS" = '-'
+        "$root/catctl" = '-'
+        "$root/cathost" = '-'
+        "$root/cats-wsl-host" = '-'
+        "$root/catway" = '-'
+        "$root/config.example.yaml" = '-'
+        "$root/licenses/" = 'd'
+        "$root/licenses/libghostty-vt.txt" = '-'
+        "$root/release.json" = '-'
+    }
+    $seen = @{}
+    foreach ($line in $Listing) {
+        if (-not $line.Trim()) { continue }
+        $fields = @($line.Trim() -split '\s+')
+        if ($fields.Count -lt 2 -or -not $fields[0]) { throw "malformed payload archive listing: $line" }
+        $kind = $fields[0].Substring(0, 1)
+        $path = $fields[$fields.Count - 1].Replace('\', '/')
+        if (-not $expected.ContainsKey($path) -or $expected[$path] -cne $kind) {
+            throw "unsafe or unexpected payload archive entry: $path ($kind)"
+        }
+        if ($seen.ContainsKey($path)) { throw "duplicate payload archive entry: $path" }
+        $seen[$path] = $true
+    }
+    if ($seen.Count -ne $expected.Count) { throw 'payload archive is missing required regular files or directories' }
+    foreach ($path in $expected.Keys) {
+        if (-not $seen.ContainsKey($path)) { throw "payload archive is missing required entry: $path" }
+    }
+}
+
 function Read-CatsRelease {
     param([string]$PackageRoot)
     $path = Join-Path $PackageRoot 'release.json'
@@ -287,6 +355,7 @@ function Invoke-CatsInstall {
     )
     $PackageRoot = (Resolve-Path -LiteralPath $PackageRoot).Path
     Test-CatsPackageChecksums $PackageRoot | Out-Null
+    Test-CatsPackageLayout $PackageRoot | Out-Null
     $release = Read-CatsRelease $PackageRoot
     if (-not $SkipPrerequisiteCheck) { Test-CatsPrerequisites $release }
     $target = Resolve-CatsTarget $Distribution $User
@@ -365,7 +434,9 @@ function Invoke-CatsInstall {
         $copiedHash = (Invoke-CatsWsl $target.Distribution $target.User '/usr/bin/sha256sum' @("$payloadStage/payload.tar.gz")).Output.Split(' ')[0]
         $sourceHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($copiedHash.ToLowerInvariant() -ne $sourceHash) { throw 'WSL payload archive changed while crossing the Windows/WSL boundary' }
-        Invoke-CatsWsl $target.Distribution $target.User '/bin/tar' @('-xzf', "$payloadStage/payload.tar.gz", '-C', $payloadStage, '--strip-components=1') | Out-Null
+        $archiveListing = Invoke-CatsWsl $target.Distribution $target.User '/usr/bin/env' @('LC_ALL=C', '/bin/tar', '-tvzf', "$payloadStage/payload.tar.gz")
+        Assert-CatsPayloadArchiveListing ($archiveListing.Output -split "`n") $releaseId
+        Invoke-CatsWsl $target.Distribution $target.User '/bin/tar' @('-xzf', "$payloadStage/payload.tar.gz", '-C', $payloadStage, '--strip-components=1', '--no-same-owner', '--no-same-permissions') | Out-Null
         Invoke-CatsWsl $target.Distribution $target.User '/bin/rm' @('-f', '--', "$payloadStage/payload.tar.gz") | Out-Null
         Invoke-CatsWsl $target.Distribution $target.User '/usr/bin/sha256sum' @('--check', 'SHA256SUMS') $payloadStage | Out-Null
         Invoke-CatsWsl $target.Distribution $target.User '/bin/chmod' @('0755', "$payloadStage/catway", "$payloadStage/cathost", "$payloadStage/catctl", "$payloadStage/cats-wsl-host") | Out-Null
@@ -531,4 +602,4 @@ function Invoke-CatsUninstall {
     return $plan
 }
 
-Export-ModuleMember -Function Invoke-CatsInstall, Invoke-CatsUninstall, Test-CatsPackageChecksums, Save-CatsAppConfig, Get-CatsUninstallPlan
+Export-ModuleMember -Function Invoke-CatsInstall, Invoke-CatsUninstall, Test-CatsPackageChecksums, Test-CatsPackageLayout, Save-CatsAppConfig, Get-CatsUninstallPlan

@@ -2050,8 +2050,11 @@
   // Several of the numbers happen to coincide today. The scales stay separate
   // so any of them can move without dragging the others with it.
   const USAGE_LEVELS  = { high: 75, crit: 90, of: "of the window used" };
-  const MEMORY_LEVELS = { high: 80, crit: 90, of: "of host memory in use" };
-  const DISK_LEVELS   = { high: 85, crit: 95, of: "of the disk in use" };
+  // The group heading says which runtime supplied these readings ("Host" or
+  // "WSL VM"). Keep the tooltip boundary-neutral so WSL values are never
+  // mistaken for total Windows memory or disk.
+  const MEMORY_LEVELS = { high: 80, crit: 90, of: "of server memory in use" };
+  const DISK_LEVELS   = { high: 85, crit: 95, of: "of the server disk in use" };
 
   // The HOST group's rows, by the name the server gives each one. An unknown
   // name falls back to the memory scale at the call site — a new host row is far

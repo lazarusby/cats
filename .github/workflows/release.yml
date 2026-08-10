@@ -172,7 +172,7 @@ jobs:
   windows-11-wsl2-gui:
     needs: [validate-tag, windows-wsl-dist]
     runs-on: [self-hosted, Windows, X64, cats-wsl2-gui]
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -201,7 +201,8 @@ jobs:
           $archive = (Get-ChildItem .\dist\cats_*_windows_amd64_wsl_ubuntu-24.04_amd64.zip -File).FullName
           .\scripts\windows\Test-CatsReleaseCandidate.ps1 -PackageArchive $archive `
             -Distribution $env:CATS_WSL_DISTRO -User $env:CATS_WSL_USER `
-            -ExpectedVersion '${{ needs.validate-tag.outputs.version }}'
+            -ExpectedVersion '${{ needs.validate-tag.outputs.version }}' `
+            -IncludePhase8Qualification -IncludeDistributionShutdownQualification
 
   publish:
     needs: [validate-tag, native-dist, wsl-payload, windows-wsl-dist, windows-11-wsl2-gui]
