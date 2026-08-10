@@ -739,3 +739,6 @@ and remaining blockers.
   `internal/desktopproto`, and `internal/wslclient` tests. The first native run
   emitted all packages as `ok` but hit the known transient executable cleanup
   lock; a clean-directory rerun exited successfully.
+- Concluded the non-rewriting integration as merge commit `40a624f` with parents
+  `b6f3e90` (the complete WSL implementation) and `5b92a5f` (canonical main).
+  Ancestry verification shows no canonical upstream commits remain outstanding.

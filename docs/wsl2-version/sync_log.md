@@ -114,6 +114,19 @@ Additional non-conflicting integration:
 - Final `git diff --cached --check`: passed after normalizing Markdown metadata
   headers from hard-break spaces to list items.
 
+### Result
+
+- Merge commit: `40a624fa3dd9bf2b8848fa93c0bedecd55301bd8`.
+- Parents: prior WSL tip `b6f3e90df2832b37360a92d5f3ed02bbcd6f721e`
+  and canonical upstream tip `5b92a5f1ef5ad1e736fa9435c4d7e4323b7870c4`.
+- Post-merge divergence against `upstream/main`: 11 commits unique to the
+  merged WSL branch (the 10 WSL commits plus this merge), zero upstream commits
+  remaining to incorporate.
+- Git ancestry checks confirmed both `upstream/main` and the previously
+  published `origin/wsl-ver` are ancestors of the merge commit.
+- The exact project scratch directory used for caches and disposable test files
+  was removed after validation; it is not recoverable and the worktree was clean.
+
 ### Procedure for the next sync
 
 1. Ensure `wsl-ver` has no unrelated working-tree changes.
