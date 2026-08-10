@@ -9,10 +9,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rohanthewiz/cats/internal/wslclient"
 )
 
 var windowsUIIntegration = flag.Bool("cats-windows-ui-integration", false,
@@ -30,10 +33,11 @@ type nativeUIReport struct {
 }
 
 type nativeE2EReport struct {
-	Href          string `json:"href"`
-	Ready         string `json:"ready"`
-	ClipboardRead bool   `json:"clipboard_read"`
-	HasBody       bool   `json:"has_body"`
+	Href               string `json:"href"`
+	Ready              string `json:"ready"`
+	ClipboardRead      bool   `json:"clipboard_read"`
+	ClipboardRoundTrip string `json:"clipboard_round_trip"`
+	HasBody            bool   `json:"has_body"`
 }
 
 func TestWindowsNativeWebViewIntegration(t *testing.T) {
@@ -132,11 +136,19 @@ func TestWindowsNativeWSLEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	backendStopped := false
 	defer func() {
-		if err := backend.Stop(context.Background()); err != nil {
-			t.Errorf("stop backend: %v", err)
+		if !backendStopped {
+			if err := backend.Stop(context.Background()); err != nil {
+				t.Errorf("stop backend: %v", err)
+			}
 		}
 	}()
+
+	// Exercise the real browser protocol and PTY before inspecting the native
+	// window: create a pane, run commands in both panes, and close the new pane.
+	runWSLCatctlProbe(t, target, backend.URL(),
+		`wait:800;type:printf CATS_PHASE7_RESTORE\n;expect:1:CATS_PHASE7_RESTORE;split:1:v;panes:2;typeat:2:printf CATS_PHASE7_SECOND\n;expect:2:CATS_PHASE7_SECOND;close:2;panes:1`)
 
 	window := newWindow("cats native WSL integration").(*nativeWindow)
 	defer window.Destroy()
@@ -154,9 +166,10 @@ func TestWindowsNativeWSLEndToEnd(t *testing.T) {
 	timer := time.AfterFunc(10*time.Second, window.w.Terminate)
 	probe := time.AfterFunc(1200*time.Millisecond, func() {
 		window.Dispatch(func() {
-			window.Eval(`window.catsE2EReport(JSON.stringify({href:location.href,
-ready:document.readyState,clipboard_read:typeof window.catsClipRead==="function",
-has_body:!!document.body}))`)
+			window.Eval(`(async()=>{let clip="";try{await window.catsClipWrite("CATS_PHASE7_CLIPBOARD");clip=await window.catsClipRead();}catch(_){}
+window.catsE2EReport(JSON.stringify({href:location.href,ready:document.readyState,
+clipboard_read:typeof window.catsClipRead==="function",clipboard_round_trip:clip,
+has_body:!!document.body}))})()`)
 		})
 	})
 	window.Navigate(backend.URL())
@@ -166,11 +179,40 @@ has_body:!!document.body}))`)
 	select {
 	case report := <-reports:
 		if !strings.HasPrefix(report.Href, backend.URL()) || report.Ready != "complete" ||
-			!report.ClipboardRead || !report.HasBody {
+			!report.ClipboardRead || report.ClipboardRoundTrip != "CATS_PHASE7_CLIPBOARD" || !report.HasBody {
 			t.Fatalf("native WSL report = %+v", report)
 		}
 	default:
 		t.Fatal("native WSL page produced no report")
+	}
+
+	if err := backend.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	backendStopped = true
+
+	// A fresh helper/catway pair must cold-restore the surviving pane and its
+	// captured command output from the first launch.
+	restored, err := startLocalBackend(t.Context(), appConfig{Mode: "local", WSL: target})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := restored.Stop(context.Background()); err != nil {
+			t.Errorf("stop restored backend: %v", err)
+		}
+	}()
+	runWSLCatctlProbe(t, target, restored.URL(), `wait:800;panes:1;expect:1:CATS_PHASE7_RESTORE`)
+}
+
+func runWSLCatctlProbe(t *testing.T, target wslclient.Target, baseURL, script string) {
+	t.Helper()
+	wsURL := "ws" + strings.TrimPrefix(baseURL, "http") + "/ws"
+	args := []string{"--distribution", target.Distribution, "--user", target.User, "--exec",
+		target.PayloadPath + "/catctl", "probe", "--url", wsURL, "--timeout", "15s", "--script", script}
+	command := exec.CommandContext(t.Context(), "wsl.exe", args...)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("catctl probe: %v\n%s", err, output)
 	}
 }
 

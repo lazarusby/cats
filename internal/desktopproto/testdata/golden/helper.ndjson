@@ -1,0 +1,4 @@
+{"v":1,"type":"starting","app_version":"v7.0.0","pid":7001}
+{"v":1,"type":"ready","app_version":"v7.0.0","addr":"127.0.0.1:47007","pid":7001}
+{"v":1,"type":"error","stage":"catway","message":"exited before readiness"}
+{"v":1,"type":"stopped","reason":"requested"}

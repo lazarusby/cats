@@ -104,10 +104,18 @@ function Read-CatsRelease {
     $path = Join-Path $PackageRoot 'release.json'
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw 'package release.json is missing' }
     $release = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-    if ($release.schema -ne 1 -or $release.product -ne 'cats-windows-wsl') { throw 'unsupported CATS package metadata' }
-    if ([string]$release.release_id -notmatch '^[0-9a-f]{7,40}$') { throw 'release_id must be a git hash' }
-    if ($release.compatibility_version -ne $release.release_id) { throw 'package compatibility version does not match release id' }
+    if (($release.schema -ne 1 -and $release.schema -ne 2) -or $release.product -ne 'cats-windows-wsl') { throw 'unsupported CATS package metadata' }
+    if ([string]$release.release_id -notmatch '^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$') { throw 'release_id is not a safe version identifier' }
+    if ([string]$release.compatibility_version -notmatch '^[0-9a-f]{7,40}$') { throw 'compatibility_version must be a git hash' }
+    if ($release.schema -eq 1 -and $release.compatibility_version -ne $release.release_id) { throw 'legacy package compatibility version does not match release id' }
     if ($release.architecture -ne 'amd64' -or $release.payload_archive -ne 'wsl-payload.tar.gz') { throw 'package is not the supported Windows/WSL amd64 layout' }
+    if ($release.schema -eq 2) {
+        if ([string]$release.source_commit -notmatch '^[0-9a-f]{40}$' -or -not ([string]$release.source_commit).StartsWith([string]$release.compatibility_version)) { throw 'source commit does not match compatibility version' }
+        if ($release.windows_architecture -ne 'amd64' -or $release.wsl_architecture -ne 'amd64') { throw 'package architecture pair is unsupported' }
+        if ($release.supported_distribution.id -ne 'ubuntu' -or $release.supported_distribution.version -ne '24.04') { throw 'package distribution floor is unsupported' }
+        if ($release.components.launcher.file -ne 'Cats.exe' -or $release.components.payload.file -ne 'wsl-payload.tar.gz') { throw 'package component mapping is unsupported' }
+        if ($release.components.launcher.compatibility_version -ne $release.compatibility_version -or $release.components.payload.compatibility_version -ne $release.compatibility_version) { throw 'package component compatibility mapping is inconsistent' }
+    }
     return $release
 }
 

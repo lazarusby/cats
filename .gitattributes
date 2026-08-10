@@ -3,6 +3,9 @@
 *.sh text eol=lf
 Makefile text eol=lf
 *.go text eol=lf
+*.ndjson text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
 
 # Windows PowerShell 5.1 accepts either form; CRLF is conventional and is what
 # Authenticode signs in the assembled Windows archive.

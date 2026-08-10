@@ -4,9 +4,57 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// TestProtocolGoldens pins the exact lifecycle bytes consumed on both sides of
+// the Windows/WSL boundary. CI runs this same test on native Windows and Linux;
+// a field/order/newline change therefore cannot land on only one half.
+func TestProtocolGoldens(t *testing.T) {
+	helperRecords := []HelperRecord{
+		NewStarting("v7.0.0", 7001),
+		NewReady("v7.0.0", "127.0.0.1:47007", 7001),
+		NewError("catway", "exited before readiness"),
+		NewStopped("requested"),
+	}
+	var helper bytes.Buffer
+	for _, record := range helperRecords {
+		if err := EncodeHelper(&helper, record); err != nil {
+			t.Fatalf("encode helper golden: %v", err)
+		}
+	}
+	assertGoldenBytes(t, "helper.ndjson", helper.Bytes())
+	decoder := NewDecoder(bytes.NewReader(helper.Bytes()))
+	for _, want := range helperRecords {
+		got, err := decoder.ReadHelper()
+		if err != nil || got != want {
+			t.Fatalf("decode helper golden = %#v, %v; want %#v", got, err, want)
+		}
+	}
+
+	var launcher bytes.Buffer
+	if err := EncodeLauncher(&launcher, NewStop()); err != nil {
+		t.Fatalf("encode launcher golden: %v", err)
+	}
+	assertGoldenBytes(t, "launcher.ndjson", launcher.Bytes())
+	if got, err := NewDecoder(bytes.NewReader(launcher.Bytes())).ReadLauncher(); err != nil || got != NewStop() {
+		t.Fatalf("decode launcher golden = %#v, %v", got, err)
+	}
+}
+
+func assertGoldenBytes(t *testing.T, name string, got []byte) {
+	t.Helper()
+	want, err := os.ReadFile(filepath.Join("testdata", "golden", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("%s changed\n got: %q\nwant: %q", name, got, want)
+	}
+}
 
 func TestHelperRoundTrip(t *testing.T) {
 	records := []HelperRecord{

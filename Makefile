@@ -33,7 +33,7 @@ GIT_HASH  := $(shell git rev-parse --short HEAD 2>/dev/null)
 GIT_SUBJ  := $(shell git log -1 --pretty=%s 2>/dev/null | base64 | tr -d '\n')
 STAMP     := -ldflags "-X $(STAMP_PKG).hash=$(GIT_HASH) -X $(STAMP_PKG).subjectB64=$(GIT_SUBJ)"
 
-.PHONY: all vt build test test-catapp-common test-catapp-windows-compile test-windows-installer build-ghostty test-ghostty \
+.PHONY: all vt build test test-protocol-golden test-wsl-host-integration test-catapp-common test-catapp-windows-compile test-windows-installer build-ghostty test-ghostty \
 		race-ghostty binaries wsl-payload wsl-payload-dist windows-launcher windows-dist local dist macapp macapp-client fmt-check vet \
         vet-ghostty check clean
 
@@ -51,6 +51,10 @@ build:
 
 test:
 	go test ./...
+
+# Exact desktop lifecycle bytes run unchanged on Linux and native Windows.
+test-protocol-golden:
+	go test -count=1 -run '^TestProtocolGoldens$$' ./internal/desktopproto
 
 # cmd/catapp normally exists only on Darwin/Windows, but its platform-neutral
 # mode/config/lifecycle tests also run headlessly on Linux/WSL.
@@ -102,6 +106,11 @@ windows-dist:
 
 test-windows-installer:
 	powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows/Test-CatsInstaller.ps1
+
+# Requires `wsl-payload`; ordinary Linux CI uses --allow-non-wsl intentionally
+# while still launching the real helper, daemons, terminal, and catctl probe.
+test-wsl-host-integration:
+	bash scripts/test-wsl-host-integration.sh
 
 # --- personal install --------------------------------------------------------
 

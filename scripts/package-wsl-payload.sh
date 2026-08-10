@@ -8,6 +8,19 @@ hash=$(git rev-parse --short HEAD)
 case "$hash" in
   *[!0-9a-f]*|'') echo "invalid git hash: $hash" >&2; exit 1 ;;
 esac
+source_commit=$(git rev-parse HEAD)
+release_id=${CATS_RELEASE_VERSION:-$hash}
+if [[ ! $release_id =~ ^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$ ]]; then
+  echo "invalid release version: $release_id" >&2
+  exit 1
+fi
+if [[ -n ${CATS_RELEASE_VERSION:-} ]]; then
+  tag_commit=$(git rev-parse --verify "refs/tags/${release_id}^{commit}" 2>/dev/null || true)
+  if [[ $tag_commit != "$source_commit" ]]; then
+    echo "release tag $release_id does not resolve to HEAD $source_commit" >&2
+    exit 1
+  fi
+fi
 arch=$(go env GOARCH)
 if [[ $arch != amd64 ]]; then
   echo "WSL payload release is qualified only for amd64, got $arch" >&2
@@ -32,7 +45,8 @@ test -n "$glibc_floor" || { echo "could not determine GLIBC symbol floor" >&2; e
 
 epoch=${SOURCE_DATE_EPOCH:-$(git show -s --format=%ct HEAD)}
 built_at=$(date -u -d "@$epoch" '+%Y-%m-%dT%H:%M:%SZ')
-root="cats-wsl-payload_${hash}_linux_${arch}"
+distro_floor=ubuntu-24.04
+root="cats-wsl-payload_${release_id}_${distro_floor}_linux_${arch}"
 stage="dist/${root}"
 output="dist/${root}.tar.gz"
 rm -rf -- "$stage"
@@ -43,12 +57,14 @@ cp third_party/libghostty-vt/LICENSE "$stage/licenses/libghostty-vt.txt"
 
 printf '%s\n' \
   '{' \
-  '  "schema": 1,' \
+  '  "schema": 2,' \
   '  "product": "cats-wsl-payload",' \
-  "  \"release_id\": \"$hash\"," \
+  "  \"release_id\": \"$release_id\"," \
   "  \"compatibility_version\": \"$hash\"," \
+  "  \"source_commit\": \"$source_commit\"," \
   '  "os": "linux",' \
   "  \"architecture\": \"$arch\"," \
+  '  "distribution": {"id":"ubuntu","version":"24.04"},' \
   "  \"glibc_floor\": \"$glibc_floor\"," \
   "  \"built_at\": \"$built_at\"" \
   '}' > "$stage/release.json"

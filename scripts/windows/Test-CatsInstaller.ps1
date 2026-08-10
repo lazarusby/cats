@@ -39,6 +39,24 @@ try {
         & $installerModule { param($osRelease) Assert-CatsSupportedDistribution $osRelease } "ID=debian`nVERSION_ID=`"13`""
     } 'unsupported distribution should fail'
 
+    $releaseRoot = Join-Path $temporary 'release-schema'
+    [IO.Directory]::CreateDirectory($releaseRoot) | Out-Null
+    $release = [ordered]@{
+        schema = 2; product = 'cats-windows-wsl'; release_id = 'v1.2.3'; compatibility_version = 'abcdef0'
+        source_commit = ('abcdef0' + ('1' * 33)); architecture = 'amd64'; windows_architecture = 'amd64'; wsl_architecture = 'amd64'
+        supported_distribution = [ordered]@{ id = 'ubuntu'; version = '24.04' }; payload_archive = 'wsl-payload.tar.gz'
+        components = [ordered]@{
+            launcher = [ordered]@{ file = 'Cats.exe'; compatibility_version = 'abcdef0' }
+            payload = [ordered]@{ file = 'wsl-payload.tar.gz'; compatibility_version = 'abcdef0' }
+        }
+    }
+    [IO.File]::WriteAllText((Join-Path $releaseRoot 'release.json'), ($release | ConvertTo-Json -Depth 6), (New-Object Text.UTF8Encoding($false)))
+    $parsedRelease = & $installerModule { param($root) Read-CatsRelease $root } $releaseRoot
+    Assert-True ($parsedRelease.release_id -eq 'v1.2.3') 'schema-2 semantic release was rejected'
+    $release.source_commit = ('1234567' + ('0' * 33))
+    [IO.File]::WriteAllText((Join-Path $releaseRoot 'release.json'), ($release | ConvertTo-Json -Depth 6), (New-Object Text.UTF8Encoding($false)))
+    Assert-Throws { & $installerModule { param($root) Read-CatsRelease $root } $releaseRoot | Out-Null } 'mismatched schema-2 source identity should fail'
+
     $configPath = Join-Path $temporary 'config\app.json'
     [IO.Directory]::CreateDirectory((Split-Path -Parent $configPath)) | Out-Null
     [IO.File]::WriteAllText($configPath, '{"mode":"remote","remote":{"url":"https://cats.example","label":"home"},"future":{"keep":true}}', (New-Object Text.UTF8Encoding($false)))
