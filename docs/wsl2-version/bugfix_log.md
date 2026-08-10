@@ -137,3 +137,8 @@ choices belong in [decision_log.md](decision_log.md).
   requests `-DesktopShortcut` and verifies from a separate PowerShell process
   that both links retain the package-signing-appropriate target and the exact
   arguments, working directory, and icon.
+- Final verification: The `037cd09` unsigned package installed both real shell
+  links with `C:\Windows\explorer.exe` as the durable target, the quoted
+  versioned `Cats.exe` path as the sole argument, and the versioned executable
+  as working directory and icon source. A new process resolved the full
+  definitions from both Desktop and Start menu.

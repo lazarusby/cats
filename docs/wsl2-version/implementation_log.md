@@ -801,3 +801,13 @@ and remaining blockers.
   quoted, versioned CATS executable as its argument; signed packages continue to
   use a direct target. Integration expectations derive from the package signing
   claim and validate the full shortcut definition in a separate process.
+- Committed the final shortcut fix as `037cd09`, rebuilt `Cats.exe`, `catway`,
+  `cathost`, `catctl`, and `cats-wsl-host`, and produced
+  `cats_037cd09_windows_amd64_wsl_ubuntu-24.04_amd64.zip` plus the standalone
+  Ubuntu payload archive. The release-package validator passed and correctly
+  classified the result as an unsigned development distribution.
+- Installed release `037cd09` for `Ubuntu/bylaz`. Independent shortcut readback
+  passed for both real shell locations, helper health reported `amd64` and
+  `037cd09`, all four WSL programs were x86-64 ELF executables, and every
+  installed payload entry passed `SHA256SUMS --check`. The requested Desktop
+  shortcut remains; the two diagnostic probe shortcuts were removed.
