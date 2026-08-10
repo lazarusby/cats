@@ -498,13 +498,6 @@ function Invoke-CatsInstall {
         Save-CatsAppConfig $configPath $target.Distribution $target.User $payloadCurrent | Out-Null
         $configChanged = $true
         $executable = Join-Path $windowsRelease 'Cats.exe'
-        Set-CatsShortcut $startShortcut $executable '' $windowsRelease "$executable,0"
-        $startShortcutChanged = $true
-        if ($DesktopShortcut) {
-            Set-CatsShortcut $desktopLink $executable '' $windowsRelease "$executable,0"
-            $desktopShortcutChanged = $true
-        }
-
         $originalLocalAppData = $env:LOCALAPPDATA
         try {
             $env:LOCALAPPDATA = $localAppData
@@ -512,6 +505,18 @@ function Invoke-CatsInstall {
         }
         finally { $env:LOCALAPPDATA = $originalLocalAppData }
         if ($smoke.ExitCode -ne 0) { throw "installed launcher/backend smoke check exited $($smoke.ExitCode)" }
+
+        # Publish entry points only after the executable/payload pair has passed
+        # its smoke. Besides keeping a failed candidate out of the shell, this
+        # ensures the shortcut is the final write in the transaction: Windows
+        # link tracking cannot rewrite it around an executable used by the
+        # in-flight smoke before another process has ever resolved the link.
+        Set-CatsShortcut $startShortcut $executable '' $windowsRelease "$executable,0"
+        $startShortcutChanged = $true
+        if ($DesktopShortcut) {
+            Set-CatsShortcut $desktopLink $executable '' $windowsRelease "$executable,0"
+            $desktopShortcutChanged = $true
+        }
 
         $committed = $true
         if ($windowsBackedUp) { Remove-Item -LiteralPath $windowsBackup -Recurse -Force -ErrorAction SilentlyContinue }

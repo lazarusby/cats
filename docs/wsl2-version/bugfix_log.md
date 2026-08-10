@@ -116,15 +116,18 @@ choices belong in [decision_log.md](decision_log.md).
 - Bug: The production installer reported success and created `Cats.lnk` files,
   but Windows shortcut APIs returned an empty target for both the Start-menu and
   requested desktop shortcut, so the desktop launch acceptance check failed.
-- Root cause: `Set-CatsShortcut` treated `WScript.Shell.Save()` as proof of a
-  valid link and never read the saved file back. The installer integration test
-  did not request a desktop shortcut or inspect either shortcut’s launch
-  properties, allowing a structurally present but unresolved `.lnk` through.
-- Fix: Read back and compare target, arguments, working directory, and icon
-  after every save. If the first serialization is invalid, remove the exact link
-  and retry once from a fresh file; if the retry is invalid, fail the install so
-  its existing rollback restores the previous state. Treat a previously
-  unresolved link as absent during rollback rather than trying to recreate it.
+- Root cause: The installer published shortcuts before running the installed
+  launcher/backend smoke. After the transaction completed, both links retained
+  their working directory and icon strings but lost the resolvable target. An
+  immediate readback in the same WScript COM process saw cached target state and
+  therefore could not prove cross-process durability. The integration test also
+  neither requested a desktop link nor inspected shortcuts independently.
+- Fix: Run the installed launcher/backend smoke before publishing shortcuts, so
+  shortcut creation is the transaction’s final user-entry-point write. Read
+  back and compare target, arguments, working directory, and icon after every
+  save, with one bounded retry from a removed/fresh `.lnk`; fail into rollback
+  if it remains invalid. Treat an unresolved previous link as absent on rollback.
 - Regression coverage: The isolated real Windows/WSL installer transaction now
-  requests `-DesktopShortcut` and verifies both Start-menu and desktop links
-  point to the installed versioned `Cats.exe` with the exact launch properties.
+  requests `-DesktopShortcut` and verifies from a separate PowerShell process
+  that both links point to the installed versioned `Cats.exe` with the exact
+  launch properties.

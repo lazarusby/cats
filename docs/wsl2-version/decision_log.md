@@ -1106,9 +1106,10 @@ choice. Superseded decisions remain in the log with a link to their replacement.
 
 - Date: 2026-08-10
 - Status: Accepted
-- Decision: A Windows shortcut is committed only after a fresh readback matches
-  its target, arguments, working directory, and icon. Retry one failed save from
-  a removed/fresh `.lnk`; fail and roll back if the second result is invalid.
+- Decision: Publish Windows shortcuts only after the installed launcher/backend
+  smoke succeeds. Commit a shortcut only after a fresh readback matches its
+  target, arguments, working directory, and icon; retry one failed save from a
+  removed/fresh `.lnk` and roll back if the second result is invalid.
 - Context: The real `3a3f1e6` install produced nonempty Start-menu and desktop
   `.lnk` files whose embedded strings mentioned the versioned executable, but
   both WScript and Shell APIs resolved their target as empty. `Save()` did not
@@ -1117,10 +1118,11 @@ choice. Superseded decisions remain in the log with a link to their replacement.
 - Alternatives: Accept file existence as success; repair only the current
   desktop link manually; launch the shortcut as verification and leave a GUI
   process running; retry without a bound.
-- Consequences: Install cannot report success with an unusable launcher link.
-  A transient shell serialization failure gets one safe recovery attempt, a
-  persistent failure uses existing transactional rollback, and tests cover both
-  managed shortcut locations without opening the GUI.
+- Consequences: A candidate that fails smoke never becomes a shell entry point,
+  and the smoke cannot disturb links that have not yet been written. A transient
+  serialization failure gets one safe recovery attempt, a persistent failure
+  uses existing rollback, and a separate-process test covers both managed links
+  without opening the GUI.
 - Evidence: B-008 and the expanded isolated installer transaction.
 
 ## Open and recently closed decisions

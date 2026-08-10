@@ -788,3 +788,9 @@ and remaining blockers.
   launch definitions. Decision D-064 records the transactional rule. The build
   must be repeated after this fix so final artifacts identify the corrected
   source commit.
+- Independent verification after the first rebuilt install showed the same
+  empty target. Cross-process probes proved standalone shortcut serialization
+  persisted correctly and exposed that the same-process verifier had observed
+  cached COM state. Moved shortcut publication after the installed smoke and
+  changed integration verification to a separate PowerShell process; another
+  source commit and rebuild are required before final delivery.
